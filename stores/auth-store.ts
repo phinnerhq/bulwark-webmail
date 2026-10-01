@@ -625,6 +625,24 @@ function shouldEndProviderSession(account: AccountEntry | null | undefined): boo
 }
 
 /**
+ * Before adding an account, the URL that ends the active account's provider
+ * session and comes back to `returnTo`, or null when there is none to end.
+ * The active account stays signed in: only the provider's browser session
+ * goes, which would otherwise refuse to sign in a different person.
+ */
+export async function providerSignOutBeforeAddingAccount(returnTo: string): Promise<string | null> {
+  const account = useAccountStore.getState().getActiveAccount();
+  if (!account || !shouldEndProviderSession(account)) return null;
+  const query = `slot=${account.cookieSlot}&provider_only=true&return_to=${encodeURIComponent(returnTo)}`;
+  try {
+    const res = await apiFetch(`/api/auth/token?${query}`, { method: 'DELETE' });
+    return res.ok ? readEndSessionUrl(await res.json().catch(() => null)) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The account whose provider session "Sign out of all accounts" ends. A page
  * can make one top-level navigation, so one provider can be visited: the
  * active account's, when it signed in through one, else the first such account

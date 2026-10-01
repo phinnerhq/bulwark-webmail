@@ -70,7 +70,12 @@ async function revokeRefreshToken(token: string, serverId: string | null, metada
 }
 
 /** The provider logout URL for a slot being signed out, or null when there is none to visit. */
-function endSessionUrlFor(metadata: OAuthMetadata | null, serverId: string | null, idToken: string | undefined): string | null {
+function endSessionUrlFor(
+  metadata: OAuthMetadata | null,
+  serverId: string | null,
+  idToken: string | undefined,
+  postLogoutRedirectUri = getPostLogoutRedirectUri(),
+): string | null {
   if (!metadata?.end_session_endpoint || !isEndSessionEnabled()) return null;
   let clientId: string;
   try {
@@ -82,8 +87,36 @@ function endSessionUrlFor(metadata: OAuthMetadata | null, serverId: string | nul
     endpoint: metadata.end_session_endpoint,
     clientId,
     idToken,
-    postLogoutRedirectUri: getPostLogoutRedirectUri(),
+    postLogoutRedirectUri,
   });
+}
+
+/**
+ * Where the provider may send the browser back after ending only its own
+ * session: a page of this site, judged by the same host the CSRF gate trusts.
+ */
+function sameSiteReturnUrl(request: NextRequest, returnTo: string | null): string | null {
+  if (!returnTo) return null;
+  try {
+    const url = new URL(returnTo);
+    const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host');
+    return host && url.host === host && (url.protocol === 'https:' || url.protocol === 'http:') ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Adding an account: the provider still holds the slot's login session and
+ * refuses to switch it to the different person signing in next (Keycloak:
+ * "already authenticated as different user"). Ends that session only - the
+ * slot keeps its tokens and stays signed in here.
+ */
+async function providerOnlySignOutUrl(cookieStore: CookieStore, slot: number, returnTo: string): Promise<string | null> {
+  const serverId = cookieStore.get(refreshTokenServerCookieName(slot))?.value || null;
+  const idToken = cookieStore.get(idTokenCookieName(slot))?.value;
+  const metadata = await getMetadata(serverId, { fallbackClientId: DEFAULT_CLIENT_ID }).catch(() => null);
+  return endSessionUrlFor(metadata, serverId, idToken, returnTo);
 }
 
 type CookieStore = Awaited<ReturnType<typeof cookies>>;
@@ -306,6 +339,13 @@ export async function DELETE(request: NextRequest) {
     const params = request.nextUrl.searchParams;
     const basePath = request.nextUrl.basePath;
     const cookieStore = await cookies();
+
+    if (params.get('provider_only') === 'true') {
+      const returnTo = sameSiteReturnUrl(request, params.get('return_to'));
+      if (!returnTo) return NextResponse.json({ error: 'Invalid return_to' }, { status: 400 });
+      const endSessionUrl = await providerOnlySignOutUrl(cookieStore, getSlot(request), returnTo);
+      return NextResponse.json({ ok: true, ...(endSessionUrl && { end_session_url: endSessionUrl }) });
+    }
 
     if (params.get('all') === 'true') {
       // One top-level navigation can end only one provider session, so the

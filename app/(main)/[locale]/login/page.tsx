@@ -6,7 +6,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useAuthStore, consumeSignedOut } from "@/stores/auth-store";
+import { useAuthStore, consumeSignedOut, providerSignOutBeforeAddingAccount } from "@/stores/auth-store";
 import { useAccountStore } from "@/stores/account-store";
 import { useThemeStore } from "@/stores/theme-store";
 import { useShallow } from "zustand/react/shallow";
@@ -32,6 +32,10 @@ import {
 import { toAsciiDomain } from "@/lib/idn";
 
 /** The domain of a complete address (`user@example.com`), or '' while it is still being typed. */
+
+/** Set while the browser visits the provider to end its session before adding an account. */
+const PROVIDER_LEFT_KEY = "add_account_provider_left";
+
 function completeAddressDomain(username: string): string {
   const match = /^[^@\s]+@([^@\s]+\.[^@\s.]+)$/.exec(username.trim());
   return match ? match[1].toLowerCase() : "";
@@ -533,6 +537,14 @@ function LoginPageContent() {
     setShowThemeMenu(false);
   }, [setTheme]);
 
+  // Back from ending the provider session: carry on with the sign-in it was for.
+  const resumeAddAccount = useRef(isAddAccountMode && typeof window !== "undefined" && !!sessionStorage.getItem(PROVIDER_LEFT_KEY));
+  useEffect(() => {
+    if (!resumeAddAccount.current || !oauthMetadata) return;
+    resumeAddAccount.current = false;
+    void handleOAuthLogin();
+  });
+
   if (configLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-muted/30">
@@ -722,6 +734,18 @@ function LoginPageContent() {
       return;
     }
     setOauthLoading(true);
+
+    // The provider's session for the account already signed in would refuse a
+    // different person, so it ends first and the sign-in resumes on return.
+    if (isAddAccountMode && !sessionStorage.getItem(PROVIDER_LEFT_KEY)) {
+      const providerSignOut = await providerSignOutBeforeAddingAccount(window.location.href);
+      if (providerSignOut) {
+        sessionStorage.setItem(PROVIDER_LEFT_KEY, "1");
+        window.location.href = providerSignOut;
+        return;
+      }
+    }
+    sessionStorage.removeItem(PROVIDER_LEFT_KEY);
 
     const verifier = generateCodeVerifier();
     const challenge = await generateCodeChallenge(verifier);
