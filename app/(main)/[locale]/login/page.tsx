@@ -15,7 +15,7 @@ import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
-import { useAuthStore, consumeSignedOut, SESSION_EXPIRED_DRAFTS_UNSAVED_KEY } from "@/stores/auth-store";
+import { useAuthStore, consumeSignedOut, providerSignOutBeforeAddingAccount, SESSION_EXPIRED_DRAFTS_UNSAVED_KEY } from "@/stores/auth-store";
 import { consumeLost } from "@/lib/offline/lost";
 import { consumeWipeNote, onRefusedLoginsChanged, refusedWaits, type RefusedWait, type WipeNote } from "@/lib/devices/wipe-state";
 import { wipeNoteText } from "@/components/offline/device-wipe-host";
@@ -61,6 +61,10 @@ import { Block } from "@/components/boot-skeleton/kit";
 import { consumeSessionEnd, type SessionEndReason } from "@/lib/session-policy/sign-out-reason";
 
 /** The domain of a complete address (`user@example.com`), or '' while it is still being typed. */
+
+/** Set while the browser visits the provider to end its session before adding an account. */
+const PROVIDER_LEFT_KEY = "add_account_provider_left";
+
 function completeAddressDomain(username: string): string {
   const match = /^[^@\s]+@([^@\s]+\.[^@\s.]+)$/.exec(username.trim());
   return match ? match[1].toLowerCase() : "";
@@ -924,6 +928,14 @@ function LoginPageContent() {
     themeMenu.closeContextMenu();
   }, [setTheme, themeMenu]);
 
+  // Back from ending the provider session: carry on with the sign-in it was for.
+  const resumeAddAccount = useRef(isAddAccountMode && typeof window !== "undefined" && !!sessionStorage.getItem(PROVIDER_LEFT_KEY));
+  useEffect(() => {
+    if (!resumeAddAccount.current || !oauthMetadata) return;
+    resumeAddAccount.current = false;
+    void handleOAuthLogin();
+  });
+
   // The server HTML, and every visit until /api/config answers: the card's
   // shape, the same one signed-out visitors of the app pages get first. Also
   // the pass that hydrates that HTML, however far the config has got: this
@@ -1161,6 +1173,18 @@ function LoginPageContent() {
       return;
     }
     setOauthLoading(true);
+
+    // The provider's session for the account already signed in would refuse a
+    // different person, so it ends first and the sign-in resumes on return.
+    if (isAddAccountMode && !sessionStorage.getItem(PROVIDER_LEFT_KEY)) {
+      const providerSignOut = await providerSignOutBeforeAddingAccount(window.location.href);
+      if (providerSignOut) {
+        sessionStorage.setItem(PROVIDER_LEFT_KEY, "1");
+        window.location.href = providerSignOut;
+        return;
+      }
+    }
+    sessionStorage.removeItem(PROVIDER_LEFT_KEY);
 
     const verifier = generateCodeVerifier();
     const challenge = await generateCodeChallenge(verifier);
