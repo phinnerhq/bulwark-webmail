@@ -698,8 +698,9 @@ function LoginPageContent() {
     authUrl.searchParams.set("code_challenge", challenge);
     authUrl.searchParams.set("code_challenge_method", "S256");
     authUrl.searchParams.set("login_hint", account);
+    // select_account is ignored by Keycloak, which then reuses the first account's session.
     if (isAddAccountMode) {
-      authUrl.searchParams.set("prompt", "select_account");
+      authUrl.searchParams.set("prompt", "login");
     }
 
     window.location.href = authUrl.toString();
@@ -763,8 +764,9 @@ function LoginPageContent() {
     authUrl.searchParams.set("state", state);
     authUrl.searchParams.set("code_challenge", challenge);
     authUrl.searchParams.set("code_challenge_method", "S256");
+    // select_account is ignored by Keycloak, which then reuses the first account's session.
     if (isAddAccountMode) {
-      authUrl.searchParams.set("prompt", "select_account");
+      authUrl.searchParams.set("prompt", "login");
     }
 
     window.location.href = authUrl.toString();
