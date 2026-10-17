@@ -10,7 +10,8 @@ import { hasSessionSecret } from '@/lib/auth/session-secret';
 import { readStalwartAuthContextFromStore } from '@/lib/stalwart/auth-context';
 import { isTrustedJmapServerUrl } from '@/lib/stalwart/server-fetch';
 import { configManager } from '@/lib/admin/config-manager';
-import { findServerByUrl, parseJmapServers } from '@/lib/admin/jmap-servers';
+import { findServerById, findServerByUrl, parseJmapServers } from '@/lib/admin/jmap-servers';
+import { refreshTokenServerCookieName } from '@/lib/oauth/tokens';
 import { IMPERSONATION_GRANT_COOKIE, openImpersonationGrant } from '@/lib/impersonation/grant-cookie';
 import { MAX_ACCOUNT_SLOTS } from '@/lib/account-utils';
 import { rejectCrossOriginRequest } from '@/lib/security/same-origin';
@@ -133,7 +134,11 @@ export async function POST(request: NextRequest) {
       }
       const totp = typeof body?.totp === 'string' && body.totp.trim() ? body.totp.trim() : undefined;
       await configManager.ensureLoaded();
-      const serverId = findServerByUrl(parseJmapServers(configManager.get<unknown>('jmapServers', [])), serverUrl)?.id ?? null;
+      // The entry the slot signed in with: several entries can share one mail
+      // server, each with its own OAuth client, so its URL alone is ambiguous.
+      const servers = parseJmapServers(configManager.get<unknown>('jmapServers', []));
+      const slotServer = findServerById(servers, cookieStore.get(refreshTokenServerCookieName(slot))?.value);
+      const serverId = (findServerByUrl(slotServer ? [slotServer] : [], serverUrl) ?? findServerByUrl(servers, serverUrl))?.id ?? null;
 
       const result = await mintGrantWithPassword({
         serverUrl,

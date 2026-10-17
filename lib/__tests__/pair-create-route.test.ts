@@ -55,6 +55,7 @@ import { IMPERSONATION_GRANT_COOKIE, sealImpersonationGrant } from '@/lib/impers
 import { resetPairingStoreForTests, stashGrant, type PairingGrant } from '@/lib/auth/pairing-store';
 import { readPairReauthFromStore, setPairReauthInStore } from '@/lib/auth/pair-reauth';
 import { openPhoneRefreshToken } from '@/lib/auth/pair-bundle';
+import { refreshTokenServerCookieName } from '@/lib/oauth/tokens';
 import { POST as createPOST } from '@/app/api/auth/pair/create/route';
 import { POST as redeemPOST } from '@/app/api/auth/pair/redeem/route';
 import { GET as statusGET } from '@/app/api/auth/pair/status/route';
@@ -678,6 +679,35 @@ describe('pair/create with a confidential client', () => {
     expect(tokenCalls()[0].client_secret).toBe('per-server-secret');
     const redeemed = await redeem(res.body.pairing_code);
     expect(openPhoneRefreshToken(redeemed.body.refresh_token)?.serverId).toBe('main');
+  });
+
+  // Several entries can share one mail server, each with its own client.
+  const refuseAppClient = () => mailServer({
+    apiAuth: (body) => (body.clientId === 'bulwark-webmail'
+      ? new Response('client not registered', { status: 401 })
+      : body.accountSecret === PASSWORD ? authenticated() : json({ type: 'failure' })),
+  });
+
+  it('uses the entry the slot signed in with when several share its server', async () => {
+    config.jmapServers = [
+      { id: 'north', label: 'North', url: SERVER, oauth: { clientId: 'webmail-north' } },
+      { id: 'south', label: 'South', url: SERVER, oauth: { clientId: 'webmail-south' } },
+    ];
+    jar.set(refreshTokenServerCookieName(0), 'south');
+    handler = refuseAppClient();
+    expect((await create({ password: PASSWORD, redirect_uri: `${WEBMAIL}/auth/callback` })).status).toBe(200);
+    expect(tokenCalls()).toEqual([expect.objectContaining({ client_id: 'webmail-south' })]);
+  });
+
+  it("ignores a slot entry that is not the session's server", async () => {
+    config.jmapServers = [
+      { id: 'main', label: 'Main', url: SERVER, oauth: { clientId: 'webmail-main' } },
+      { id: 'other', label: 'Other', url: 'https://other.example', oauth: { clientId: 'webmail-other' } },
+    ];
+    jar.set(refreshTokenServerCookieName(0), 'other');
+    handler = refuseAppClient();
+    expect((await create({ password: PASSWORD, redirect_uri: `${WEBMAIL}/auth/callback` })).status).toBe(200);
+    expect(tokenCalls()).toEqual([expect.objectContaining({ client_id: 'webmail-main' })]);
   });
 
   it('keeps the app client public when the secret belongs to another configured client', async () => {
