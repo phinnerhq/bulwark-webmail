@@ -48,6 +48,8 @@
     "dismiss": "Zavřít",
     "or": "nebo",
     "sign_in_sso": "Přihlásit se přes SSO",
+    "idp_list_label": "Vyberte způsob přihlášení",
+    "idp_start_failed": "Přihlášení přes {provider} se nepodařilo spustit. Zkuste to znovu.",
     "add_account_title": "Přidat účet",
     "add_account_subtitle": "Přihlásit se k jinému účtu",
     "cancel": "Zrušit",

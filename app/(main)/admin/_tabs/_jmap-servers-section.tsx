@@ -16,6 +16,7 @@ interface RowDraft {
   label: string;
   url: string;
   domains: string;
+  icon: string;
   oauthClientId: string;
   oauthIssuerUrl: string;
   oauthClientSecret: string;
@@ -29,6 +30,7 @@ function entryToDraft(e: JmapServerEntry): RowDraft {
     label: e.label,
     url: e.url,
     domains: (e.domains ?? []).join(', '),
+    icon: e.icon ?? '',
     oauthClientId: e.oauth?.clientId ?? '',
     oauthIssuerUrl: e.oauth?.issuerUrl ?? '',
     oauthClientSecret: e.oauth?.clientSecret ?? '',
@@ -45,6 +47,7 @@ function draftToEntry(d: RowDraft): JmapServerEntry | null {
     .split(/[,\s]+/)
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
+  const icon = d.icon.trim();
   const clientId = d.oauthClientId.trim();
   const issuerUrl = d.oauthIssuerUrl.trim().replace(/\/+$/, '');
   const clientSecret = d.oauthClientSecret;
@@ -62,6 +65,7 @@ function draftToEntry(d: RowDraft): JmapServerEntry | null {
     label: d.label.trim() || id,
     url,
     ...(domains.length > 0 ? { domains } : {}),
+    ...(icon ? { icon } : {}),
     ...(oauth ? { oauth } : {}),
   };
 }
@@ -72,6 +76,7 @@ function emptyDraft(): RowDraft {
     label: '',
     url: '',
     domains: '',
+    icon: '',
     oauthClientId: '',
     oauthIssuerUrl: '',
     oauthClientSecret: '',
@@ -131,7 +136,7 @@ export function JmapServersSection({ value, source, onChange, onRevert }: Props)
             )}
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Each entry appears as an option on the login dropdown. Leave the list empty to fall back to the single <code className="text-[11px]">JMAP Server URL</code> above.
+            Each entry appears as an option on the login dropdown, or as its own sign-in button with OAuth only. Leave the list empty to fall back to the single <code className="text-[11px]">JMAP Server URL</code> above.
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -204,17 +209,31 @@ export function JmapServersSection({ value, source, onChange, onRevert }: Props)
                 </div>
               </div>
             </div>
-            <div>
-              <label className="block text-[11px] font-medium text-muted-foreground mb-1">
-                Email domains (comma-separated, used for auto-pick)
-              </label>
-              <input
-                type="text"
-                value={d.domains}
-                onChange={(e) => update(i, { domains: e.target.value })}
-                placeholder="example.com, example.org"
-                className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[11px] font-medium text-muted-foreground mb-1">
+                  Email domains (comma-separated, used for auto-pick)
+                </label>
+                <input
+                  type="text"
+                  value={d.domains}
+                  onChange={(e) => update(i, { domains: e.target.value })}
+                  placeholder="example.com, example.org"
+                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-muted-foreground mb-1">
+                  Icon URL (shown on its sign-in button with OAuth only)
+                </label>
+                <input
+                  type="url"
+                  value={d.icon}
+                  onChange={(e) => update(i, { icon: e.target.value })}
+                  placeholder="https://example.com/icon.svg"
+                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </div>
             </div>
             <button
               onClick={() => update(i, { oauthExpanded: !d.oauthExpanded })}

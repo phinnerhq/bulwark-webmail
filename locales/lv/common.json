@@ -48,6 +48,8 @@
     "dismiss": "Aizvērt",
     "or": "vai",
     "sign_in_sso": "Pierakstīties ar SSO",
+    "idp_list_label": "Izvēlieties, kā pierakstīties",
+    "idp_start_failed": "Neizdevās sākt pierakstīšanos ar {provider}. Mēģiniet vēlreiz.",
     "add_account_title": "Pievienot kontu",
     "add_account_subtitle": "Pierakstīties citā kontā",
     "cancel": "Atcelt",

@@ -16,6 +16,7 @@ function isJmapServers(value: unknown): value is PublicJmapServerEntry[] {
     if (!isRecord(entry)) return false;
     if (!isString(entry.id) || !isString(entry.label) || !isString(entry.url)) return false;
     if (!Array.isArray(entry.domains) || !entry.domains.every(isString)) return false;
+    if (entry.icon !== undefined && !isString(entry.icon)) return false;
     if (entry.oauth === undefined) return true;
     return isRecord(entry.oauth)
       && (entry.oauth.clientId === undefined || isString(entry.oauth.clientId))

@@ -48,6 +48,8 @@
     "dismiss": "Zavrieť",
     "or": "alebo",
     "sign_in_sso": "Prihlásiť sa cez SSO",
+    "idp_list_label": "Vyberte spôsob prihlásenia",
+    "idp_start_failed": "Prihlásenie cez {provider} sa nepodarilo spustiť. Skúste to znova.",
     "add_account_title": "Pridať účet",
     "add_account_subtitle": "Prihlásiť sa iným účtom",
     "cancel": "Zrušiť",

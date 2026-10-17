@@ -45,6 +45,8 @@
     "dismiss": "סגור",
     "or": "אוֹ",
     "sign_in_sso": "היכנס באמצעות SSO",
+    "idp_list_label": "בחרו איך להיכנס",
+    "idp_start_failed": "לא ניתן להתחיל כניסה באמצעות {provider}. נסו שוב.",
     "add_account_title": "הוסף חשבון",
     "add_account_subtitle": "היכנס עם חשבון אחר",
     "cancel": "ביטול",

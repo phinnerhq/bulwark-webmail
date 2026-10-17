@@ -48,6 +48,8 @@
     "dismiss": "Sluiten",
     "or": "of",
     "sign_in_sso": "Inloggen met SSO",
+    "idp_list_label": "Kies hoe je wilt inloggen",
+    "idp_start_failed": "Inloggen met {provider} kon niet worden gestart. Probeer het opnieuw.",
     "add_account_title": "Account toevoegen",
     "add_account_subtitle": "Inloggen met een ander account",
     "cancel": "Annuleren",
