@@ -20,6 +20,7 @@ import type { OAuthMetadata } from '@/lib/oauth/discovery';
 import { getCookieOptions } from '@/lib/oauth/cookie-config';
 import { fitsSetCookieBudget } from '@/lib/oauth/set-cookie-budget';
 import {
+  latestSignInSlot,
   buildEndSessionUrl,
   clearIdToken,
   getPostLogoutRedirectUri,
@@ -107,17 +108,71 @@ function sameSiteReturnUrl(request: NextRequest, returnTo: string | null): strin
   }
 }
 
+/** The provider a server signs in at, by its discovery URL, or null when unknown. */
+function providerOf(serverId: string | null): string | null {
+  try {
+    return getRequiredConfig(serverId, { fallbackClientId: DEFAULT_CLIENT_ID }).discoveryUrl ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function slotServerId(cookieStore: CookieStore, slot: number): string | null {
+  return cookieStore.get(refreshTokenServerCookieName(slot))?.value || null;
+}
+
 /**
- * Adding an account: the provider still holds the slot's login session and
- * refuses to switch it to the different person signing in next (Keycloak:
- * "already authenticated as different user"). Ends that session only - the
- * slot keeps its tokens and stays signed in here.
+ * The slot holding the provider session that `slot`'s provider keeps in this
+ * browser: the one that signed in there last. A slot whose provider is unknown
+ * only stands for itself.
  */
-async function providerOnlySignOutUrl(cookieStore: CookieStore, slot: number, returnTo: string): Promise<string | null> {
-  const serverId = cookieStore.get(refreshTokenServerCookieName(slot))?.value || null;
-  const idToken = cookieStore.get(idTokenCookieName(slot))?.value;
-  const metadata = await getMetadata(serverId, { fallbackClientId: DEFAULT_CLIENT_ID }).catch(() => null);
-  return endSessionUrlFor(metadata, serverId, idToken, returnTo);
+function sessionSlotFor(cookieStore: CookieStore, slot: number): number | null {
+  const provider = providerOf(slotServerId(cookieStore, slot));
+  return latestSignInSlot(cookieStore, MAX_ACCOUNT_SLOTS, (other) =>
+    other === slot || (provider !== null && providerOf(slotServerId(cookieStore, other)) === provider));
+}
+
+/**
+ * Before a sign-in at `serverId` that may be someone else: the provider's
+ * session in this browser would refuse a different person (Keycloak: "already
+ * authenticated as different user"), so it ends first. Only the provider's
+ * session goes - every slot keeps its tokens and stays signed in here.
+ *
+ * The session is named by the id token of the slot that signed in at that
+ * provider last. With none kept (everyone signed out), `lastServerId`, the
+ * server this browser last signed in with, names the client when it is at the
+ * same provider: that is enough, and a provider with no session left sends the
+ * browser straight back.
+ */
+async function providerOnlySignOutUrl(
+  cookieStore: CookieStore,
+  returnTo: string,
+  serverId: string | null,
+  lastServerId: string | null,
+): Promise<string | null> {
+  const provider = providerOf(serverId);
+  if (provider === null) return null;
+  const slot = latestSignInSlot(cookieStore, MAX_ACCOUNT_SLOTS, (s) => providerOf(slotServerId(cookieStore, s)) === provider);
+  let clientServerId: string | null;
+  let idToken: string | undefined;
+  if (slot !== null) {
+    clientServerId = slotServerId(cookieStore, slot);
+    idToken = cookieStore.get(idTokenCookieName(slot))?.value;
+  } else if (lastServerId && isConfiguredServerId(lastServerId) && providerOf(lastServerId) === provider) {
+    clientServerId = lastServerId;
+  } else {
+    return null;
+  }
+  const metadata = await getMetadata(clientServerId, { fallbackClientId: DEFAULT_CLIENT_ID }).catch(() => null);
+  return endSessionUrlFor(metadata, clientServerId, idToken, returnTo);
+}
+
+function isConfiguredServerId(serverId: string): boolean {
+  try {
+    return getRequiredConfig(serverId).serverId === serverId;
+  } catch {
+    return false;
+  }
 }
 
 type CookieStore = Awaited<ReturnType<typeof cookies>>;
@@ -177,7 +232,7 @@ export async function POST(request: NextRequest) {
       cookieStore.set(cookieName, tokens.refresh_token, getCookieOptions());
     }
     const cachedAccessToken = cacheAccessToken(cookieStore, slot, tokens.access_token, tokens.expires_in || 3600, [tokens.refresh_token, serverId]);
-    storeIdToken(cookieStore, slot, tokens.id_token, request.nextUrl.basePath, [tokens.refresh_token, cachedAccessToken, serverId]);
+    storeIdToken(cookieStore, slot, tokens.id_token, request.nextUrl.basePath, [tokens.refresh_token, cachedAccessToken, serverId], { signIn: true });
     // Persist which server entry minted this refresh token so the PUT/DELETE
     // handlers can route the refresh/revocation calls to the right token
     // endpoint without the client having to track it across page loads.
@@ -347,14 +402,23 @@ export async function DELETE(request: NextRequest) {
     if (params.get('provider_only') === 'true') {
       const returnTo = sameSiteReturnUrl(request, params.get('return_to'));
       if (!returnTo) return NextResponse.json({ error: 'Invalid return_to' }, { status: 400 });
-      const endSessionUrl = await providerOnlySignOutUrl(cookieStore, getSlot(request), returnTo);
+      const endSessionUrl = await providerOnlySignOutUrl(
+        cookieStore,
+        returnTo,
+        params.get('server_id') || null,
+        params.get('last_server_id') || null,
+      );
       return NextResponse.json({ ok: true, ...(endSessionUrl && { end_session_url: endSessionUrl }) });
     }
 
     if (params.get('all') === 'true') {
       // One top-level navigation can end only one provider session, so the
       // caller names the slot whose provider should be signed out, if any.
-      const endSessionSlot = parseSlot(params.get('end_session_slot'));
+      // The session there is the one its latest sign-in holds: another slot's
+      // id token names a session already replaced, and Keycloak asks the user
+      // to confirm a logout for a session the browser is not in.
+      const requestedSlot = parseSlot(params.get('end_session_slot'));
+      const endSessionSlot = requestedSlot === null ? null : sessionSlotFor(cookieStore, requestedSlot) ?? requestedSlot;
       const slots = Array.from({ length: MAX_ACCOUNT_SLOTS }, (_, i) => i);
       const urls = await Promise.all(
         slots.map((i) => signOutSlot(cookieStore, i, basePath, i === endSessionSlot)),
@@ -363,7 +427,12 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ ok: true, ...(endSessionUrl && { end_session_url: endSessionUrl }) });
     }
 
-    const endSessionUrl = await signOutSlot(cookieStore, getSlot(request), basePath, params.get('end_session') === 'true');
+    // A slot that no longer holds its provider's session in this browser (a
+    // later sign-in there replaced it) has none to end.
+    const slot = getSlot(request);
+    const sessionSlot = sessionSlotFor(cookieStore, slot);
+    const endSession = params.get('end_session') === 'true' && (sessionSlot === null || sessionSlot === slot);
+    const endSessionUrl = await signOutSlot(cookieStore, slot, basePath, endSession);
     return NextResponse.json({ ok: true, ...(endSessionUrl && { end_session_url: endSessionUrl }) });
   } catch (error) {
     logger.error('Token revocation error', { error: error instanceof Error ? error.message : 'Unknown error' });

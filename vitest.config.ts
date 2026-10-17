@@ -13,8 +13,9 @@ export default defineConfig({
     // repos/** holds sibling checkouts with their own runners. node_modules
     // must be globbed at any depth or the nested repos/*/node_modules trees
     // get collected too.
-    // scripts/lite/smoke/** is the Playwright smoke for the static Lite export.
-    exclude: ['integration/**', 'examples/**', 'repos/**', '**/node_modules/**', '.next/**', 'out/**', 'scripts/lite/smoke/**', 'scripts/perf-guard/**'],
+    // scripts/lite/smoke/**, scripts/perf-guard/** and scripts/idp-switch/** are
+    // Playwright suites.
+    exclude: ['integration/**', 'examples/**', 'repos/**', '**/node_modules/**', '.next/**', 'out/**', 'scripts/lite/smoke/**', 'scripts/perf-guard/**', 'scripts/idp-switch/**'],
   },
   resolve: {
     alias: {

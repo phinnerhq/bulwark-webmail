@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
       } else {
         cookieStore.delete(serverCookieName);
       }
-      storeIdToken(cookieStore, slot, tokens.id_token, request.nextUrl.basePath, [tokens.refresh_token, pendingServerId]);
+      storeIdToken(cookieStore, slot, tokens.id_token, request.nextUrl.basePath, [tokens.refresh_token, pendingServerId], { signIn: true });
     }
 
     // Delete pending cookie
