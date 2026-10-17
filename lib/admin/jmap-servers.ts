@@ -19,6 +19,8 @@ export interface JmapServerEntry {
   label: string;
   url: string;
   domains?: string[];
+  /** Picture shown before the label on this server's sign-in button: an http(s) URL. */
+  icon?: string;
   oauth?: JmapServerOAuthConfig & {
     /**
      * Set on the admin dashboard's view of an entry instead of the secret
@@ -34,6 +36,7 @@ export interface PublicJmapServerEntry {
   label: string;
   url: string;
   domains: string[];
+  icon?: string;
   oauth?: {
     clientId?: string;
     issuerUrl?: string;
@@ -86,6 +89,7 @@ export function parseJmapServers(raw: unknown): JmapServerEntry[] {
           .map((d) => d.trim().toLowerCase())
           .filter(Boolean)
       : [];
+    const icon = typeof e.icon === 'string' ? e.icon.trim() : '';
     let oauth: JmapServerOAuthConfig | undefined;
     if (e.oauth && typeof e.oauth === 'object') {
       const o = e.oauth as Record<string, unknown>;
@@ -109,6 +113,7 @@ export function parseJmapServers(raw: unknown): JmapServerEntry[] {
       label: label || id,
       url,
       ...(domains.length > 0 ? { domains } : {}),
+      ...(icon && isHttpUrl(icon) ? { icon } : {}),
       ...(oauth ? { oauth } : {}),
     });
   }
@@ -132,6 +137,7 @@ export function redactJmapServers(servers: JmapServerEntry[]): PublicJmapServerE
     label: s.label,
     url: s.url,
     domains: s.domains ?? [],
+    ...(s.icon ? { icon: s.icon } : {}),
     ...(s.oauth && (s.oauth.clientId || s.oauth.issuerUrl)
       ? {
           oauth: {

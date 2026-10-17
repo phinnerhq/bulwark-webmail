@@ -19,6 +19,7 @@ interface RowDraft {
   label: string;
   url: string;
   domains: string;
+  icon: string;
   oauthClientId: string;
   oauthIssuerUrl: string;
   oauthClientSecret: string;
@@ -36,6 +37,7 @@ function entryToDraft(e: JmapServerEntry): RowDraft {
     label: e.label,
     url: e.url,
     domains: (e.domains ?? []).join(', '),
+    icon: e.icon ?? '',
     oauthClientId: e.oauth?.clientId ?? '',
     oauthIssuerUrl: e.oauth?.issuerUrl ?? '',
     oauthClientSecret: '',
@@ -54,6 +56,7 @@ function draftToEntry(d: RowDraft): JmapServerEntry | null {
     .split(/[,\s]+/)
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
+  const icon = d.icon.trim();
   const clientId = d.oauthClientId.trim();
   const issuerUrl = d.oauthIssuerUrl.trim().replace(/\/+$/, '');
   const clientSecret = d.oauthClientSecret;
@@ -76,6 +79,7 @@ function draftToEntry(d: RowDraft): JmapServerEntry | null {
     label: d.label.trim() || id,
     url,
     ...(domains.length > 0 ? { domains } : {}),
+    ...(icon ? { icon } : {}),
     ...(oauth ? { oauth } : {}),
   };
 }
@@ -86,6 +90,7 @@ function emptyDraft(): RowDraft {
     label: '',
     url: '',
     domains: '',
+    icon: '',
     oauthClientId: '',
     oauthIssuerUrl: '',
     oauthClientSecret: '',
@@ -146,7 +151,7 @@ export function JmapServersSection({ value, source, onChange, onRevert }: Props)
         <div className="min-w-0 sm:pe-4">
           <span className="text-sm font-medium text-foreground">Servers</span>
           <p className="text-xs text-muted-foreground mt-1">
-            Each entry appears as an option on the login dropdown. Leave the list empty to fall back to the single <code className="text-[0.6875rem]">JMAP server URL</code> above.
+            Each entry appears as an option on the login dropdown, or as its own sign-in button with OAuth only. Leave the list empty to fall back to the single <code className="text-[0.6875rem]">JMAP server URL</code> above.
           </p>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
@@ -214,18 +219,33 @@ export function JmapServersSection({ value, source, onChange, onRevert }: Props)
                 </div>
               </div>
             </div>
-            <div>
-              <label htmlFor={labelFor(i)("domains")} className={fieldLabelClass}>
-                Email domains (comma-separated, used for auto-pick)
-              </label>
-              <input
-                id={labelFor(i)("domains")}
-                type="text"
-                value={d.domains}
-                onChange={(e) => update(i, { domains: e.target.value })}
-                placeholder="example.com, example.org"
-                className={fieldClass}
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label htmlFor={labelFor(i)("domains")} className={fieldLabelClass}>
+                  Email domains (comma-separated, used for auto-pick)
+                </label>
+                <input
+                  id={labelFor(i)("domains")}
+                  type="text"
+                  value={d.domains}
+                  onChange={(e) => update(i, { domains: e.target.value })}
+                  placeholder="example.com, example.org"
+                  className={fieldClass}
+                />
+              </div>
+              <div>
+                <label htmlFor={labelFor(i)("icon")} className={fieldLabelClass}>
+                  Icon URL (shown on its sign-in button with OAuth only)
+                </label>
+                <input
+                  id={labelFor(i)("icon")}
+                  type="url"
+                  value={d.icon}
+                  onChange={(e) => update(i, { icon: e.target.value })}
+                  placeholder="https://example.com/icon.svg"
+                  className={fieldClass}
+                />
+              </div>
             </div>
             <button
               onClick={() => update(i, { oauthExpanded: !d.oauthExpanded })}
