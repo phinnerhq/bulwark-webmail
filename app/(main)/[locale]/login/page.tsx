@@ -1458,7 +1458,8 @@ function LoginPageContent() {
       // Only persist credentials when the server actually supports it
       // (a SESSION_SECRET is configured). Prevents a broken cookie write
       // when the remember-me feature is disabled server-side.
-      persistSession
+      persistSession,
+      selectedServer?.id,
     );
 
     if (success) {
