@@ -65,3 +65,6 @@ next-env.d.ts
 
 # Kubernetes reference manifests: the secrets users fill in
 deploy/kubernetes/base/secrets.env
+
+# Playwright output
+/test-results/
