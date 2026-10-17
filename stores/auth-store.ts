@@ -669,15 +669,30 @@ function shouldEndProviderSession(account: AccountEntry | null | undefined): boo
 }
 
 /**
- * Before adding an account, the URL that ends the active account's provider
- * session and comes back to `returnTo`, or null when there is none to end.
- * The active account stays signed in: only the provider's browser session
- * goes, which would otherwise refuse to sign in a different person.
+ * Before a sign-in that may be someone else's (adding an account, or another
+ * provider on the login page), the URL that ends the identity provider's
+ * session in this browser and comes back to `returnTo`, or null when there is
+ * none to end. Keycloak and others keep one session per browser and refuse a
+ * different person while it lasts ("already authenticated as different user").
+ *
+ * Every account stays signed in: only the provider's browser session goes.
+ * Accounts keep working on their own refresh tokens when those outlive it
+ * (offline_access, see OAUTH_EXTRA_SCOPES). The server names the session at
+ * `serverId`'s provider by the id token of the account that signed in there
+ * last; with none kept, `lastServerId` is the server this browser last signed
+ * in with.
  */
-export async function providerSignOutBeforeAddingAccount(returnTo: string): Promise<string | null> {
-  const account = useAccountStore.getState().getActiveAccount();
-  if (!account || !shouldEndProviderSession(account)) return null;
-  const query = `slot=${account.cookieSlot}&provider_only=true&return_to=${encodeURIComponent(returnTo)}`;
+export async function providerSignOutBeforeSignIn(
+  returnTo: string,
+  serverId: string | null | undefined,
+  lastServerId?: string | null,
+): Promise<string | null> {
+  if (IS_LITE || isEmbedded()) return null;
+  const signedInThroughProvider = useAccountStore.getState().accounts.some((account) => account.providerSession);
+  if (!signedInThroughProvider && !lastServerId) return null;
+  const query = new URLSearchParams({ provider_only: 'true', return_to: returnTo });
+  if (serverId) query.set('server_id', serverId);
+  if (lastServerId) query.set('last_server_id', lastServerId);
   try {
     const res = await apiFetch(`/api/auth/token?${query}`, { method: 'DELETE' });
     return res.ok ? readEndSessionUrl(await res.json().catch(() => null)) : null;
