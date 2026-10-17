@@ -18,6 +18,12 @@ import { fitsSetCookieBudget } from '@/lib/oauth/set-cookie-budget';
 
 export const ID_TOKEN_COOKIE = 'jmap_idt';
 
+/**
+ * The slot of the latest sign-in through a provider. `auth_time` counts in
+ * seconds, which cannot order two sign-ins made within the same one.
+ */
+export const LAST_SIGN_IN_COOKIE = 'jmap_idt_last';
+
 /** Get the id-token cookie name for a given account slot. Slot 0 uses the bare name. */
 export function idTokenCookieName(slot: number): string {
   return slot === 0 ? ID_TOKEN_COOKIE : `${ID_TOKEN_COOKIE}_${slot}`;
@@ -52,6 +58,7 @@ export function storeIdToken(
   idToken: unknown,
   basePath: string | undefined,
   otherCookieValues: ReadonlyArray<string | null | undefined> = [],
+  { signIn = false }: { signIn?: boolean } = {},
 ): void {
   const name = idTokenCookieName(slot);
   const path = idTokenCookiePath(basePath);
@@ -62,10 +69,52 @@ export function storeIdToken(
     return;
   }
   cookieStore.set(name, idToken, { ...getCookieOptions(), path });
+  // A sign-in, not a refresh: the session the browser holds at the provider is now this slot's.
+  if (signIn) cookieStore.set(LAST_SIGN_IN_COOKIE, String(slot), { ...getCookieOptions(), path });
 }
 
 export function clearIdToken(cookieStore: CookieWriter, slot: number, basePath: string | undefined): void {
   cookieStore.delete({ name: idTokenCookieName(slot), path: idTokenCookiePath(basePath) });
+}
+
+/**
+ * When the person behind an id token signed in at the provider: `auth_time`,
+ * else `iat`, in seconds; 0 when unreadable. A refresh reissues the id token
+ * but keeps `auth_time`, so this tells sign-ins apart, not refreshes. The
+ * signature is not checked: the cookie is httpOnly and written only here.
+ */
+export function idTokenAuthTime(idToken: string): number {
+  try {
+    const payload = JSON.parse(Buffer.from(idToken.split('.')[1] ?? '', 'base64url').toString('utf8'));
+    const time = typeof payload.auth_time === 'number' ? payload.auth_time : payload.iat;
+    return typeof time === 'number' ? time : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Of the slots `atProvider` accepts, the one that signed in last, by its id
+ * token, or null when none kept one. Providers such as Keycloak hold one login
+ * session per browser, replaced by each sign-in, so this slot's id token names
+ * the session the browser holds at that provider now; another slot's names a
+ * session that sign-in replaced. Sign-ins within the same second go to the
+ * one remembered as the latest.
+ */
+export function latestSignInSlot(
+  cookieStore: Pick<CookieWriter, 'get'>,
+  slotCount: number,
+  atProvider: (slot: number) => boolean,
+): number | null {
+  const lastSignIn = (cookieStore.get(LAST_SIGN_IN_COOKIE) as { value?: string } | undefined)?.value;
+  let latest: { slot: number; time: number } | null = null;
+  for (let slot = 0; slot < slotCount; slot++) {
+    const cookie = cookieStore.get(idTokenCookieName(slot)) as { value?: string } | undefined;
+    if (!cookie?.value || !atProvider(slot)) continue;
+    const time = idTokenAuthTime(cookie.value);
+    if (!latest || time > latest.time || (time === latest.time && String(slot) === lastSignIn)) latest = { slot, time };
+  }
+  return latest?.slot ?? null;
 }
 
 /** Whether signing out should also end the provider's session (OAUTH_END_SESSION). */

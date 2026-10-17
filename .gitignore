@@ -51,3 +51,6 @@ next-env.d.ts
 
 # Sibling repos
 /repos/
+
+# Playwright output
+/test-results/

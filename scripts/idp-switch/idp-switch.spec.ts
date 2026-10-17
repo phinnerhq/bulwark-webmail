@@ -1,0 +1,119 @@
+import { expect, test, type Page } from "@playwright/test";
+
+// The provider (mock-idp.mjs) keeps one session per browser and refuses to
+// sign in someone other than its person, like Keycloak. North signs in Alice,
+// South signs in Bob.
+
+const idp = "https://127.0.0.1:3171";
+
+interface IdpEvent {
+  type: string;
+  person?: string;
+}
+
+async function idpEvents(page: Page): Promise<IdpEvent[]> {
+  return (await page.request.get(`${idp}/__events`)).json();
+}
+
+async function signInWith(page: Page, provider: "North" | "South") {
+  await page.goto("/en/login");
+  await page.getByRole("group", { name: "Choose how to sign in" }).getByRole("button", { name: provider }).click();
+}
+
+async function expectMailView(page: Page) {
+  await expect(page.getByTestId("account-switcher").first()).toBeVisible({ timeout: 30_000 });
+}
+
+async function addAccountWith(page: Page, provider: "North" | "South") {
+  await page.goto("/en/login?mode=add-account");
+  await page.getByRole("combobox", { name: "Server" }).selectOption({ label: provider });
+  await page.getByRole("button", { name: "Sign in with SSO" }).click();
+}
+
+/** Refreshes a signed-in slot's token the way the app does; true when the provider still honours it. */
+async function refreshes(page: Page, slot: number): Promise<boolean> {
+  return page.evaluate(async (s) => (await fetch(`/api/auth/token?slot=${s}&force=true`, { method: "PUT" })).ok, slot);
+}
+
+test.beforeEach(async ({ page }) => {
+  await page.request.get(`${idp}/__reset`);
+});
+
+test("another provider, while the provider still holds the last person's session", async ({ page, context }) => {
+  await signInWith(page, "North");
+  await expectMailView(page);
+
+  // The webmail forgot the sign-in, the provider did not: a sign-out that never
+  // reached it. Only which provider was used last is left on this browser.
+  await page.evaluate(() => {
+    const last = localStorage.getItem("login_last_server_id");
+    localStorage.clear();
+    sessionStorage.clear();
+    if (last) localStorage.setItem("login_last_server_id", last);
+  });
+  await context.clearCookies({ domain: "localhost" });
+
+  await signInWith(page, "South");
+  // No id token is left to name the session, so the provider asks once.
+  await page.locator("#confirm-logout").click();
+  await expectMailView(page);
+
+  const events = await idpEvents(page);
+  expect(events.filter((e) => e.type === "different_user_authenticated")).toEqual([]);
+  expect(events.filter((e) => e.type === "login").map((e) => e.person)).toEqual(["alice@example.com", "bob@example.com"]);
+});
+
+test("sign-out ends the provider session without a provider page, then the other provider signs in", async ({ page }) => {
+  await signInWith(page, "North");
+  await expectMailView(page);
+
+  await page.getByTestId("account-switcher").first().click();
+  await page.getByRole("menuitem", { name: "Sign out of alice@example.com" }).click();
+  await expect(page).toHaveURL(/\/login/, { timeout: 30_000 });
+
+  await signInWith(page, "South");
+  await expectMailView(page);
+
+  const events = await idpEvents(page);
+  expect(events.filter((e) => e.type === "logout_confirmation")).toEqual([]);
+  expect(events.filter((e) => e.type === "different_user_authenticated")).toEqual([]);
+  expect(events.filter((e) => e.type === "login").map((e) => e.person)).toEqual(["alice@example.com", "bob@example.com"]);
+});
+
+test("adding an account at the other provider keeps the first one signed in", async ({ page }) => {
+  await signInWith(page, "North");
+  await expectMailView(page);
+
+  await addAccountWith(page, "South");
+  await expectMailView(page);
+
+  const events = await idpEvents(page);
+  expect(events.filter((e) => e.type === "different_user_authenticated")).toEqual([]);
+  expect(events.filter((e) => e.type === "logout_confirmation")).toEqual([]);
+  expect(events.filter((e) => e.type === "login").map((e) => e.person)).toEqual(["alice@example.com", "bob@example.com"]);
+  // Alice's session at the provider ended for Bob's sign-in; her offline
+  // refresh token outlives it.
+  expect(await refreshes(page, 0)).toBe(true);
+  expect(await refreshes(page, 1)).toBe(true);
+});
+
+test("adding an account ends the session of the latest sign-in, not of the active account", async ({ page }) => {
+  // Sign-ins within the same second, which auth_time alone cannot order.
+  await page.request.get(`${idp}/__freeze-auth-time`);
+  await signInWith(page, "North");
+  await expectMailView(page);
+  await addAccountWith(page, "South");
+  await expectMailView(page);
+
+  // Back to Alice, then add Carol at North: the provider's session is Bob's.
+  await page.getByTestId("account-switcher").first().click();
+  await page.getByTestId("account-option").filter({ hasText: "alice@example.com" }).click();
+  await page.request.get(`${idp}/__next-person?client=webmail-north&person=carol@example.com`);
+  await addAccountWith(page, "North");
+  await expectMailView(page);
+
+  const events = await idpEvents(page);
+  expect(events.filter((e) => e.type === "logout_confirmation")).toEqual([]);
+  expect(events.filter((e) => e.type === "different_user_authenticated")).toEqual([]);
+  expect(events.filter((e) => e.type === "login").map((e) => e.person)).toEqual(["alice@example.com", "bob@example.com", "carol@example.com"]);
+});

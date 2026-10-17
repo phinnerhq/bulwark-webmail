@@ -67,10 +67,15 @@ vi.mock('next/headers', () => ({
   cookies: async () => cookieStore,
 }));
 
-function mockRequest(params: Record<string, string> = {}, method = 'PUT', body?: unknown): unknown {
+function mockRequest(
+  params: Record<string, string> = {},
+  method = 'PUT',
+  body?: unknown,
+  headers: Record<string, string> = {},
+): unknown {
   return {
     method,
-    headers: { get: () => null },
+    headers: { get: (name: string) => headers[name.toLowerCase()] ?? null },
     nextUrl: { searchParams: { get: (k: string) => params[k] ?? null }, basePath: '' },
     json: async () => body,
   };
@@ -320,10 +325,11 @@ async function callRoute(
   method: 'POST' | 'DELETE',
   params: Record<string, string> = {},
   body?: unknown,
+  headers?: Record<string, string>,
 ) {
   const route = await import('@/app/api/auth/token/route');
   const handler = route[method];
-  const res = (await handler(mockRequest(params, method, body) as Parameters<typeof handler>[0])) as unknown as {
+  const res = (await handler(mockRequest(params, method, body, headers) as Parameters<typeof handler>[0])) as unknown as {
     status: number;
     json: () => Promise<Record<string, unknown>>;
   };
@@ -351,6 +357,8 @@ describe('oauth token route - sign-in keeps the id token (#905)', () => {
     // Kept off every other request, so several accounts' id tokens cannot
     // push the Cookie header past the server's limit.
     expect(cookieStore.options.get('jmap_idt_1')?.path).toBe('/api/auth/token');
+    // The latest sign-in, for telling apart sign-ins within the same second.
+    expect(cookieStore.get('jmap_idt_last')?.value).toBe('1');
   });
 
   it('does not store an id token too large for a cookie', async () => {
@@ -444,6 +452,8 @@ describe('oauth token route - refresh keeps the id token current (#905)', () => 
     await callPut({ force: 'true' });
 
     expect(cookieStore.get('jmap_idt')?.value).toBe(ID_TOKEN);
+    // A refresh is no sign-in.
+    expect(cookieStore.get('jmap_idt_last')).toBeUndefined();
   });
 
   it('forgets the id token when a reissued one would outgrow a proxy header buffer (#1096)', async () => {
@@ -739,5 +749,148 @@ describe('oauth token route - sign-out (#905)', () => {
     // Only cookies the browser sent get a clearing Set-Cookie: 50 slots of
     // them would overflow proxy header buffers.
     expect(cookieStore.deleted).not.toContain('jmap_rt_1');
+  });
+});
+
+// Keycloak keeps one login session per browser and per realm, replaced by each
+// sign-in, and refuses a different person while it lasts. Before a sign-in
+// that may be someone else, the route ends it, named by the id token of the
+// slot that signed in there last.
+describe('oauth token route - provider session before a sign-in', () => {
+  const MAIL = 'https://sso.example.com/realms/mail';
+  const OTHER = 'https://other.example.org';
+  const servers: Record<string, { clientId: string; discoveryUrl: string }> = {
+    north: { clientId: 'webmail-north', discoveryUrl: MAIL },
+    south: { clientId: 'webmail-south', discoveryUrl: MAIL },
+    partner: { clientId: 'webmail-partner', discoveryUrl: OTHER },
+  };
+  const RETURN_TO = 'https://webmail.example.com/en/login?mode=add-account';
+
+  function idToken(claims: Record<string, unknown>): string {
+    const part = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
+    return `${part({ alg: 'RS256' })}.${part(claims)}.sig`;
+  }
+
+  function signedIn(slot: number, serverId: string, claims: Record<string, unknown>): string {
+    const suffix = slot === 0 ? '' : `_${slot}`;
+    const token = idToken(claims);
+    cookieStore.set(`jmap_rt${suffix}`, `refresh-${slot}`);
+    cookieStore.set(`jmap_rts${suffix}`, serverId);
+    cookieStore.set(`jmap_idt${suffix}`, token);
+    return token;
+  }
+
+  function beforeSignIn(params: Record<string, string>) {
+    return callRoute('DELETE', { provider_only: 'true', return_to: RETURN_TO, ...params }, undefined, { host: 'webmail.example.com' });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    cookieStore = new FakeCookies();
+    configValues = {};
+    getMetadata.mockResolvedValue(KEYCLOAK);
+    getRequiredConfig.mockImplementation((serverId: string | null) => {
+      const server = serverId ? servers[serverId] : undefined;
+      if (!server) throw new Error('OAuth misconfigured');
+      return { ...server, serverId };
+    });
+    fetchMock.mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("names the session by the latest sign-in at the provider, with that slot's own client", async () => {
+    signedIn(0, 'north', { sid: 'alice', auth_time: 100 });
+    const bob = signedIn(2, 'south', { sid: 'bob', auth_time: 200 });
+
+    const { body } = await beforeSignIn({ server_id: 'north' });
+
+    const params = endSessionParams(body.end_session_url);
+    expect(params.get('id_token_hint')).toBe(bob);
+    expect(params.get('client_id')).toBe('webmail-south');
+    expect(params.get('post_logout_redirect_uri')).toBe(RETURN_TO);
+    // Every slot stays signed in.
+    expect(cookieStore.deleted).toEqual([]);
+  });
+
+  it('tells sign-ins apart by auth_time, which a refresh keeps', async () => {
+    const alice = signedIn(0, 'north', { sid: 'alice', auth_time: 300, iat: 900 });
+    signedIn(1, 'south', { sid: 'bob', auth_time: 200, iat: 400 });
+
+    const { body } = await beforeSignIn({ server_id: 'south' });
+
+    expect(endSessionParams(body.end_session_url).get('id_token_hint')).toBe(alice);
+  });
+
+  it('orders sign-ins within the same second by the one remembered as the latest', async () => {
+    signedIn(0, 'north', { sid: 'alice', auth_time: 100 });
+    const bob = signedIn(1, 'south', { sid: 'bob', auth_time: 100 });
+    cookieStore.set('jmap_idt_last', '1');
+
+    const { body } = await beforeSignIn({ server_id: 'north' });
+
+    expect(endSessionParams(body.end_session_url).get('id_token_hint')).toBe(bob);
+  });
+
+  it('leaves sessions at other providers alone', async () => {
+    signedIn(0, 'partner', { sid: 'partner', auth_time: 900 });
+    const alice = signedIn(1, 'north', { sid: 'alice', auth_time: 100 });
+
+    const { body } = await beforeSignIn({ server_id: 'south' });
+    expect(endSessionParams(body.end_session_url).get('id_token_hint')).toBe(alice);
+
+    cookieStore.delete('jmap_idt_1');
+    expect((await beforeSignIn({ server_id: 'south' })).body).not.toHaveProperty('end_session_url');
+  });
+
+  it('names the last server signed in with, by its client alone, once no id token is left', async () => {
+    const { body } = await beforeSignIn({ server_id: 'south', last_server_id: 'north' });
+
+    const params = endSessionParams(body.end_session_url);
+    expect(params.get('client_id')).toBe('webmail-north');
+    expect(params.has('id_token_hint')).toBe(false);
+    expect(params.get('post_logout_redirect_uri')).toBe(RETURN_TO);
+  });
+
+  it('ends nothing for a last server at another provider, an unknown one, or none', async () => {
+    for (const last of ['partner', 'gone', '']) {
+      const { body } = await beforeSignIn({ server_id: 'south', last_server_id: last });
+      expect(body).toEqual({ ok: true });
+    }
+  });
+
+  it('only sends the browser back to this site', async () => {
+    const { status } = await callRoute(
+      'DELETE',
+      { provider_only: 'true', server_id: 'north', return_to: 'https://evil.example/' },
+      undefined,
+      { host: 'webmail.example.com' },
+    );
+    expect(status).toBe(400);
+  });
+
+  it('signs a slot out of the provider only while it holds the session there', async () => {
+    signedIn(0, 'north', { sid: 'alice', auth_time: 100 });
+    const bob = signedIn(1, 'south', { sid: 'bob', auth_time: 200 });
+
+    // Bob's sign-in replaced Alice's session: none of hers is left to end.
+    expect((await callRoute('DELETE', { slot: '0', end_session: 'true' })).body).toEqual({ ok: true });
+
+    const { body } = await callRoute('DELETE', { slot: '1', end_session: 'true' });
+    expect(endSessionParams(body.end_session_url).get('id_token_hint')).toBe(bob);
+  });
+
+  it('signs out of the session the latest sign-in holds when signing every slot out', async () => {
+    signedIn(0, 'north', { sid: 'alice', auth_time: 100 });
+    const bob = signedIn(1, 'south', { sid: 'bob', auth_time: 200 });
+
+    const { body } = await callRoute('DELETE', { all: 'true', end_session_slot: '0' });
+
+    const params = endSessionParams(body.end_session_url);
+    expect(params.get('id_token_hint')).toBe(bob);
+    expect(params.get('client_id')).toBe('webmail-south');
   });
 });

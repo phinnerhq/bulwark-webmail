@@ -6,7 +6,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useAuthStore, consumeSignedOut, providerSignOutBeforeAddingAccount } from "@/stores/auth-store";
+import { useAuthStore, consumeSignedOut, providerSignOutBeforeSignIn } from "@/stores/auth-store";
 import { useAccountStore } from "@/stores/account-store";
 import { useThemeStore } from "@/stores/theme-store";
 import { usePolicyStore } from "@/stores/policy-store";
@@ -38,8 +38,35 @@ import { MobileHandoffConsent } from "@/components/auth/mobile-handoff-consent";
 
 /** The domain of a complete address (`user@example.com`), or '' while it is still being typed. */
 
-/** Set while the browser visits the provider to end its session before adding an account. */
-const PROVIDER_LEFT_KEY = "add_account_provider_left";
+/**
+ * Set while the browser visits the provider to end its session before a
+ * sign-in, naming the server that sign-in is for, so it resumes on return.
+ */
+const PROVIDER_LEFT_KEY = "provider_left_for";
+/** A return from the provider takes seconds; an older mark is a sign-in given up on. */
+const PROVIDER_LEFT_TTL_MS = 2 * 60 * 1000;
+
+function markProviderLeft(serverId: string): void {
+  try {
+    sessionStorage.setItem(PROVIDER_LEFT_KEY, JSON.stringify({ serverId, at: Date.now() }));
+  } catch { /* sessionStorage unavailable */ }
+}
+
+/** The server whose sign-in is waiting on the provider's sign-out, if the browser is back from it. */
+function readProviderLeft(): string | null {
+  try {
+    const mark = JSON.parse(sessionStorage.getItem(PROVIDER_LEFT_KEY) ?? "null");
+    return typeof mark?.serverId === "string" && Date.now() - mark.at < PROVIDER_LEFT_TTL_MS ? mark.serverId : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearProviderLeft(): void {
+  try {
+    sessionStorage.removeItem(PROVIDER_LEFT_KEY);
+  } catch { /* sessionStorage unavailable */ }
+}
 
 function completeAddressDomain(username: string): string {
   const match = /^[^@\s]+@([^@\s]+\.[^@\s.]+)$/.exec(username.trim());
@@ -179,7 +206,9 @@ function LoginPageContent() {
     password: "",
   });
   const [jmapEndpoint, setJmapEndpoint] = useState("");
-  const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
+  // Back from ending the provider's session: the sign-in it was for carries on.
+  const [resumeServerId] = useState(() => (typeof window === "undefined" ? null : readProviderLeft()));
+  const [selectedServerId, setSelectedServerId] = useState<string | null>(isAddAccountMode ? resumeServerId : null);
   const [domainAutoLocked, setDomainAutoLocked] = useState(false);
 
   const hasServerList = jmapServers.length > 0;
@@ -574,10 +603,22 @@ function LoginPageContent() {
     startServerSideSso();
   }, [autoSsoEnabled, oauthOnly, oauthDiscoveryDone, oauthMetadata, ssoError, isAddAccountMode, isAuthenticated, jmapServers.length, startServerSideSso]);
 
-  const handleIdpSelect = useCallback(async (server: PublicJmapServerEntry) => {
+  const handleIdpSelect = useCallback(async (server: PublicJmapServerEntry, resumed = false) => {
     setIdpFailed(null);
     setIdpPending(server.id);
-    rememberLastIdp(server.id);
+    if (!resumed) {
+      // The browser may still hold the provider session of whoever signed in
+      // last; switching provider is a different person, whom it would refuse.
+      const last = readLastIdp();
+      rememberLastIdp(server.id);
+      const providerSignOut = await providerSignOutBeforeSignIn(window.location.href, server.id, last !== server.id ? last : null);
+      if (providerSignOut) {
+        markProviderLeft(server.id);
+        window.location.href = providerSignOut;
+        return;
+      }
+    }
+    clearProviderLeft();
     if (!(await startServerSideSso(server.id))) {
       setIdpPending(null);
       setIdpFailed(server.id);
@@ -589,12 +630,21 @@ function LoginPageContent() {
     setShowThemeMenu(false);
   }, [setTheme]);
 
-  // Back from ending the provider session: carry on with the sign-in it was for.
-  const resumeAddAccount = useRef(isAddAccountMode && typeof window !== "undefined" && !!sessionStorage.getItem(PROVIDER_LEFT_KEY));
+  const resumeFor = useRef(resumeServerId);
+  const resumedAfterProviderSignOut = useRef(false);
   useEffect(() => {
-    if (!resumeAddAccount.current || !oauthMetadata) return;
-    resumeAddAccount.current = false;
-    void handleOAuthLogin();
+    const serverId = resumeFor.current;
+    if (!serverId || configLoading) return;
+    if (showIdpList) {
+      resumeFor.current = null;
+      const server = jmapServers.find((s) => s.id === serverId);
+      if (server) void handleIdpSelect(server, true);
+      else clearProviderLeft();
+    } else if (isAddAccountMode && oauthMetadata) {
+      resumeFor.current = null;
+      resumedAfterProviderSignOut.current = true;
+      void handleOAuthLogin();
+    }
   });
 
   if (configLoading) {
@@ -813,15 +863,16 @@ function LoginPageContent() {
 
     // The provider's session for the account already signed in would refuse a
     // different person, so it ends first and the sign-in resumes on return.
-    if (isAddAccountMode && !sessionStorage.getItem(PROVIDER_LEFT_KEY)) {
-      const providerSignOut = await providerSignOutBeforeAddingAccount(window.location.href);
+    if (isAddAccountMode && !resumedAfterProviderSignOut.current) {
+      const providerSignOut = await providerSignOutBeforeSignIn(window.location.href, server?.id, readLastIdp());
       if (providerSignOut) {
-        sessionStorage.setItem(PROVIDER_LEFT_KEY, "1");
+        markProviderLeft(server?.id ?? "");
         window.location.href = providerSignOut;
         return;
       }
     }
-    sessionStorage.removeItem(PROVIDER_LEFT_KEY);
+    resumedAfterProviderSignOut.current = false;
+    clearProviderLeft();
 
     const verifier = generateCodeVerifier();
     const challenge = await generateCodeChallenge(verifier);
