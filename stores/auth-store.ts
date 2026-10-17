@@ -79,7 +79,8 @@ interface AuthState {
    */
   restoringAccounts: boolean;
 
-  login: (serverUrl: string, username: string, password: string, totp?: string, rememberMe?: boolean) => Promise<boolean>;
+  /** `serverId`: the JMAP_SERVERS entry picked, as several may share one server URL. */
+  login: (serverUrl: string, username: string, password: string, totp?: string, rememberMe?: boolean, serverId?: string) => Promise<boolean>;
   /**
    * Sign in with an access token instead of a password (Bearer auth), for
    * servers that hand out API tokens, such as Fastmail. The token names no
@@ -407,15 +408,16 @@ async function exchangePasswordForTokens(params: {
   slot: number;
   redirectUri: string;
   rememberMe: boolean;
+  serverId?: string;
 }): Promise<Response> {
-  const { serverUrl, username, password, totp, slot, redirectUri, rememberMe } = params;
+  const { serverUrl, username, password, totp, slot, redirectUri, rememberMe, serverId } = params;
   if (!IS_LITE) {
     return apiFetch('/api/auth/totp-token-exchange', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      // server_id isn't passed - the route looks up the server entry by
-      // serverUrl, so per-server OAuth still applies for password+TOTP.
-      body: JSON.stringify({ serverUrl, username, password, totp, slot, redirectUri }),
+      // Without server_id the route looks the entry up by serverUrl, which
+      // picks the first of several entries sharing one server.
+      body: JSON.stringify({ serverUrl, username, password, totp, slot, redirectUri, ...(serverId ? { server_id: serverId } : {}) }),
     });
   }
   try {
@@ -1338,7 +1340,7 @@ export const useAuthStore = create<AuthState>()(
       connectedAccountsRevision: 0,
       restoringAccounts: false,
 
-      login: async (serverUrl, typedUsername, password, totp, rememberMe) => {
+      login: async (serverUrl, typedUsername, password, totp, rememberMe, serverId) => {
         set({ isLoading: true, error: null, isRateLimited: false, rateLimitUntil: null });
 
         // Sign in with the ASCII (punycode) form of an IDN domain, the form
@@ -1388,7 +1390,7 @@ export const useAuthStore = create<AuthState>()(
                   ? `${window.location.origin}${getPathPrefix()}/`
                   : `${window.location.origin}${getPathPrefix()}/${getLocaleFromPath()}/auth/callback`;
               const tokenRes = await exchangePasswordForTokens({
-                serverUrl, username, password, totp, slot: cookieSlot, redirectUri, rememberMe: !!rememberMe,
+                serverUrl, username, password, totp, slot: cookieSlot, redirectUri, rememberMe: !!rememberMe, serverId,
               });
               if (tokenRes.ok) {
                 const { access_token, expires_in, has_refresh_token } = await tokenRes.json();

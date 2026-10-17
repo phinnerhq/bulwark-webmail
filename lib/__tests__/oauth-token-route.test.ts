@@ -281,6 +281,19 @@ describe('oauth token route - access token cache (#552)', () => {
     );
   });
 
+  it("refreshes with the slot's own server entry, not one found by URL", async () => {
+    cookieStore.set('jmap_rt_1', 'south-refresh-token');
+    cookieStore.set('jmap_rts_1', 'south');
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ access_token: 'fresh-token', expires_in: 1800 }) });
+
+    expect((await callPut({ force: 'true', slot: '1' })).status).toBe(200);
+    expect(buildOAuthParams).toHaveBeenCalledWith(
+      { grant_type: 'refresh_token', refresh_token: 'south-refresh-token' },
+      'south',
+      { fallbackClientId: 'bulwark-webmail' },
+    );
+  });
+
   it('does not serve a cached token once the refresh token is gone', async () => {
     seedCachedToken('orphan-token', 1500);
 
