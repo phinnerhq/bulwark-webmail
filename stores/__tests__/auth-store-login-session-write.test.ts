@@ -81,3 +81,21 @@ it('signs out only after a session write still running has finished', async () =
   expect(written).toBeGreaterThan(-1);
   expect(calls.indexOf('DELETE /api/auth/session')).toBeGreaterThan(written);
 });
+
+// Several JMAP_SERVERS entries can share one server URL, each with its own
+// OAuth client: the token exchange is told which entry was picked.
+it('names the picked server entry in the password and TOTP token exchange', async () => {
+  const bodies: Array<Record<string, unknown>> = [];
+  const base = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    if (String(input) === '/api/auth/totp-token-exchange') {
+      bodies.push(JSON.parse(String(init?.body)));
+      return new Response(JSON.stringify({ error: 'invalid_credentials' }), { status: 401 });
+    }
+    return base(input, init);
+  });
+  await useAuthStore.getState().login(SERVER, 'bob@example.com', 'pw', '123456', false, 'south');
+  await useAuthStore.getState().login(SERVER, 'bob@example.com', 'pw', '123456', false);
+  expect(bodies[0]).toMatchObject({ serverUrl: SERVER, server_id: 'south' });
+  expect(bodies[1]).not.toHaveProperty('server_id');
+});
