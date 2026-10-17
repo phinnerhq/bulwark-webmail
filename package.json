@@ -32,6 +32,7 @@
     "test:perf-guard": "playwright test -c scripts/perf-guard/playwright.config.ts",
     "test:a11y-guard": "playwright test -c scripts/a11y-guard/playwright.config.ts",
     "test:boot-skeleton-guard": "playwright test -c scripts/boot-skeleton-guard/playwright.config.ts",
+    "test:idp-switch": "playwright test -c scripts/idp-switch/playwright.config.ts",
     "start": "node scripts/start.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
