@@ -48,6 +48,8 @@
     "dismiss": "Закрыть",
     "or": "или",
     "sign_in_sso": "Войти через SSO",
+    "idp_list_label": "Выберите способ входа",
+    "idp_start_failed": "Не удалось начать вход через {provider}. Повторите попытку.",
     "add_account_title": "Добавить аккаунт",
     "add_account_subtitle": "Войдите с другим аккаунтом",
     "cancel": "Отмена",

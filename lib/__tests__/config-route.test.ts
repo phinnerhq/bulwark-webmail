@@ -119,6 +119,18 @@ describe('config API route', () => {
     expect((await getConfig()).jmapServers[0].domains).toEqual(['acme.example']);
   });
 
+  it("publishes each server's icon", async () => {
+    vi.stubEnv('JMAP_SERVERS', JSON.stringify([
+      { id: 'north', label: 'North', url: 'https://mail.example.com', icon: 'https://north.example/icon.svg' },
+      { id: 'south', label: 'South', url: 'https://mail.example.com', icon: 'https://south.example/icon.svg' },
+    ]));
+
+    expect((await getConfig()).jmapServers.map((s: { icon?: string }) => s.icon)).toEqual([
+      'https://north.example/icon.svg',
+      'https://south.example/icon.svg',
+    ]);
+  });
+
   it('should use runtime env vars over defaults', async () => {
     vi.stubEnv('APP_NAME', 'My Mail');
     vi.stubEnv('JMAP_SERVER_URL', 'https://mail.example.com');

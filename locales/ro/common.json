@@ -48,6 +48,8 @@
     "dismiss": "Ignoră",
     "or": "sau",
     "sign_in_sso": "Conectați-vă cu SSO",
+    "idp_list_label": "Alegeți cum vă conectați",
+    "idp_start_failed": "Conectarea cu {provider} nu a putut fi pornită. Încercați din nou.",
     "add_account_title": "Adăugare cont",
     "add_account_subtitle": "Conectați-vă cu un alt cont",
     "cancel": "Anulează",

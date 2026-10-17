@@ -48,6 +48,8 @@
     "dismiss": "Dismiss",
     "or": "or",
     "sign_in_sso": "Sign in with SSO",
+    "idp_list_label": "Choose how to sign in",
+    "idp_start_failed": "Couldn't start signing in with {provider}. Try again.",
     "add_account_title": "Add Account",
     "add_account_subtitle": "Sign in with another account",
     "cancel": "Cancel",

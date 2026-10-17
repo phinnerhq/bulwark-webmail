@@ -48,6 +48,8 @@
     "dismiss": "Lukk",
     "or": "eller",
     "sign_in_sso": "Logg på med SSO",
+    "idp_list_label": "Velg hvordan du vil logge på",
+    "idp_start_failed": "Kunne ikke starte pålogging med {provider}. Prøv igjen.",
     "add_account_title": "Legg til konto",
     "add_account_subtitle": "Logg på med en annen konto",
     "cancel": "Avbryt",
