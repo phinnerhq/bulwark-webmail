@@ -48,6 +48,8 @@
     "dismiss": "Fermer",
     "or": "ou",
     "sign_in_sso": "Se connecter avec SSO",
+    "idp_list_label": "Choisissez votre mode de connexion",
+    "idp_start_failed": "Impossible de lancer la connexion avec {provider}. Réessayez.",
     "add_account_title": "Ajouter un compte",
     "add_account_subtitle": "Se connecter avec un autre compte",
     "cancel": "Annuler",

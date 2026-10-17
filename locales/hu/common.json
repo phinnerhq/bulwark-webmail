@@ -48,6 +48,8 @@
     "dismiss": "Elutasítás",
     "or": "vagy",
     "sign_in_sso": "Bejelentkezés SSO-val",
+    "idp_list_label": "Válassza ki a bejelentkezés módját",
+    "idp_start_failed": "Nem sikerült elindítani a bejelentkezést ezzel: {provider}. Próbálja újra.",
     "add_account_title": "Fiók hozzáadása",
     "add_account_subtitle": "Bejelentkezés másik fiókkal",
     "cancel": "Mégse",

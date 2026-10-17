@@ -48,6 +48,8 @@
     "dismiss": "تجاهل",
     "or": "أو",
     "sign_in_sso": "تسجيل الدخول عبر SSO",
+    "idp_list_label": "اختر طريقة تسجيل الدخول",
+    "idp_start_failed": "تعذر بدء تسجيل الدخول عبر {provider}. حاول مرة أخرى.",
     "add_account_title": "إضافة حساب",
     "add_account_subtitle": "تسجيل الدخول بحساب آخر",
     "cancel": "إلغاء",

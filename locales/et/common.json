@@ -48,6 +48,8 @@
     "dismiss": "Sulge",
     "or": "või",
     "sign_in_sso": "Logi sisse SSO-ga",
+    "idp_list_label": "Vali, kuidas sisse logida",
+    "idp_start_failed": "Teenusega {provider} sisselogimist ei õnnestunud alustada. Proovi uuesti.",
     "add_account_title": "Lisa konto",
     "add_account_subtitle": "Logi sisse teise kontoga",
     "cancel": "Tühista",

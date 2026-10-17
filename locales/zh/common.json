@@ -48,6 +48,8 @@
     "dismiss": "关闭",
     "or": "或",
     "sign_in_sso": "使用 SSO 登录",
+    "idp_list_label": "选择登录方式",
+    "idp_start_failed": "无法开始使用 {provider} 登录。请重试。",
     "add_account_title": "添加账户",
     "add_account_subtitle": "使用其他账户登录",
     "cancel": "取消",

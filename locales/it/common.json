@@ -48,6 +48,8 @@
     "dismiss": "Chiudi",
     "or": "o",
     "sign_in_sso": "Accedi con SSO",
+    "idp_list_label": "Scegli come accedere",
+    "idp_start_failed": "Impossibile avviare l'accesso con {provider}. Riprova.",
     "add_account_title": "Aggiungi account",
     "add_account_subtitle": "Accedi con un altro account",
     "cancel": "Annulla",

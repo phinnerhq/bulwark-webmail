@@ -48,6 +48,8 @@
     "dismiss": "關閉",
     "or": "或",
     "sign_in_sso": "使用 SSO 登入",
+    "idp_list_label": "選擇登入方式",
+    "idp_start_failed": "無法開始使用 {provider} 登入。請再試一次。",
     "add_account_title": "新增帳號",
     "add_account_subtitle": "使用其他帳號登入",
     "cancel": "取消",

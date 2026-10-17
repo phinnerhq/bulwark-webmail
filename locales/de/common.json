@@ -48,6 +48,8 @@
     "dismiss": "Schließen",
     "or": "oder",
     "sign_in_sso": "Mit SSO anmelden",
+    "idp_list_label": "Wählen Sie, wie Sie sich anmelden",
+    "idp_start_failed": "Die Anmeldung mit {provider} konnte nicht gestartet werden. Bitte erneut versuchen.",
     "add_account_title": "Konto hinzufügen",
     "add_account_subtitle": "Mit einem anderen Konto anmelden",
     "cancel": "Abbrechen",

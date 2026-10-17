@@ -21,6 +21,7 @@ import { generateCodeVerifier, generateCodeChallenge, generateState } from "@/li
 import { DEFAULT_OAUTH_SCOPES } from "@/lib/oauth/scopes";
 import { useUpdateStore, selectBanner } from "@/stores/update-store";
 import { offersOwnOAuth, type PublicJmapServerEntry } from "@/lib/admin/jmap-servers";
+import { IdpSignInList, readLastIdp, rememberLastIdp } from "@/components/auth/idp-sign-in-list";
 import { IS_LITE, getLiteInjectedClientId } from "@/lib/lite";
 import { getLiteClientId, probeLiteTokenLogin } from "@/lib/auth/lite-tokens";
 import {
@@ -198,6 +199,15 @@ function LoginPageContent() {
   // with OAuth even while OAuth is off globally: a Gmail bridge next to a
   // password server.
   const serverOauthEnabled = oauthEnabled || offersOwnOAuth(selectedServer);
+  // OAuth-only with several servers: a button per identity provider in place
+  // of the server menu and the single SSO button. Adding an account, the
+  // mobile hand-off and Lite (no server-side SSO) keep the menu.
+  const showIdpList = oauthOnly && jmapServers.length > 1 && !isAddAccountMode && !isMobileHandoff && !IS_LITE;
+  // Read before the list first paints, so the remembered button does not fade
+  // into the primary style. The server only ever renders the loading state.
+  const [lastIdp] = useState(readLastIdp);
+  const [idpPending, setIdpPending] = useState<string | null>(null);
+  const [idpFailed, setIdpFailed] = useState<string | null>(null);
   const [totpCode, setTotpCode] = useState("");
   const [showTotpField, setShowTotpField] = useState(false);
   // Access-token sign-in (Bearer auth) in place of username and password.
@@ -439,7 +449,19 @@ function LoginPageContent() {
   }, [serverUrl]);
 
   useEffect(() => {
-    if (!serverOauthEnabled || !serverUrl) return;
+    if (!showIdpList) return;
+    // Back from the provider through the back/forward cache: the page comes
+    // back as it was left, with the chosen button still spinning.
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) setIdpPending(null);
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, [showIdpList]);
+
+  useEffect(() => {
+    // The provider list signs in server-side, which discovers on its own.
+    if (!serverOauthEnabled || !serverUrl || showIdpList) return;
     setOauthDiscoveryDone(false);
     setOauthMetadata(null);
     const controller = new AbortController();
@@ -462,7 +484,7 @@ function LoginPageContent() {
         setOauthDiscoveryDone(true);
       });
     return () => controller.abort();
-  }, [serverOauthEnabled, serverUrl, effectiveOauthIssuerUrl, selectedServer?.id]);
+  }, [serverOauthEnabled, serverUrl, effectiveOauthIssuerUrl, selectedServer?.id, showIdpList]);
 
   // Auto-SSO: when enabled with OAUTH_ONLY, skip the login page entirely
   const ssoError = searchParams.get("sso_error");
@@ -470,7 +492,8 @@ function LoginPageContent() {
   // Read once per mount: a ref survives the effect re-runs, the flag does not.
   const signedOutOnPurpose = useRef<boolean | null>(null);
 
-  const startServerSideSso = useCallback(async () => {
+  /** Starts SSO for `serverId`, or the selected server. Resolves false when it could not start. */
+  const startServerSideSso = useCallback(async (serverId = selectedServer?.id): Promise<boolean> => {
     setOauthLoading(true);
     try {
       const prefix = getPathPrefix(params.locale as string);
@@ -492,7 +515,7 @@ function LoginPageContent() {
         body: JSON.stringify({
           redirect_uri: redirectUri,
           locale: params.locale,
-          server_id: selectedServer?.id,
+          server_id: serverId,
           ...(isMobileHandoff
             ? { mobile_redirect_uri: mobileRedirectUri, mobile_state: mobileState }
             : {}),
@@ -501,7 +524,7 @@ function LoginPageContent() {
 
       if (!res.ok) {
         setOauthLoading(false);
-        return;
+        return false;
       }
 
       const { authorize_url } = await res.json();
@@ -519,8 +542,10 @@ function LoginPageContent() {
       } else {
         window.location.href = authorize_url;
       }
+      return true;
     } catch {
       setOauthLoading(false);
+      return false;
     }
   }, [params.locale, selectedServer?.id, isMobileHandoff, mobileRedirectUri, mobileState]);
 
@@ -548,6 +573,16 @@ function LoginPageContent() {
     autoSsoTriggered.current = true;
     startServerSideSso();
   }, [autoSsoEnabled, oauthOnly, oauthDiscoveryDone, oauthMetadata, ssoError, isAddAccountMode, isAuthenticated, jmapServers.length, startServerSideSso]);
+
+  const handleIdpSelect = useCallback(async (server: PublicJmapServerEntry) => {
+    setIdpFailed(null);
+    setIdpPending(server.id);
+    rememberLastIdp(server.id);
+    if (!(await startServerSideSso(server.id))) {
+      setIdpPending(null);
+      setIdpFailed(server.id);
+    }
+  }, [startServerSideSso]);
 
   const handleThemeSelect = useCallback((newTheme: "light" | "dark" | "system") => {
     setTheme(newTheme);
@@ -1295,6 +1330,14 @@ function LoginPageContent() {
                   Dev mode - logging in as dev@localhost
                 </p>
               </div>
+            ) : showIdpList ? (
+              <IdpSignInList
+                servers={jmapServers}
+                primaryId={lastIdp && jmapServers.some((s) => s.id === lastIdp) ? lastIdp : null}
+                pendingId={idpPending}
+                failedId={idpFailed}
+                onSelect={handleIdpSelect}
+              />
             ) : oauthOnly ? (
               /* OAuth-only mode: server picker (if any) plus the SSO button */
               <div className="space-y-4">

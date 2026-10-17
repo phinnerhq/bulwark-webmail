@@ -48,6 +48,8 @@
     "dismiss": "Fechar",
     "or": "ou",
     "sign_in_sso": "Entrar com SSO",
+    "idp_list_label": "Escolha como entrar",
+    "idp_start_failed": "Não foi possível iniciar a entrada com {provider}. Tente novamente.",
     "add_account_title": "Adicionar conta",
     "add_account_subtitle": "Entrar com outra conta",
     "cancel": "Cancelar",

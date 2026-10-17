@@ -48,6 +48,8 @@
     "dismiss": "رد کردن",
     "or": "یا",
     "sign_in_sso": "ورود با SSO",
+    "idp_list_label": "روش ورود را انتخاب کنید",
+    "idp_start_failed": "شروع ورود با {provider} ممکن نشد. دوباره تلاش کنید.",
     "add_account_title": "افزودن حساب",
     "add_account_subtitle": "ورود با حساب دیگر",
     "cancel": "انصراف",

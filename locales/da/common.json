@@ -48,6 +48,8 @@
     "dismiss": "Afvis",
     "or": "eller",
     "sign_in_sso": "Log ind med SSO",
+    "idp_list_label": "Vælg, hvordan du vil logge ind",
+    "idp_start_failed": "Kunne ikke starte login med {provider}. Prøv igen.",
     "add_account_title": "Tilføj konto",
     "add_account_subtitle": "Log ind med en anden konto",
     "cancel": "Annuller",

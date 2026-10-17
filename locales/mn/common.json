@@ -48,6 +48,8 @@
     "dismiss": "Хаах",
     "or": "эсвэл",
     "sign_in_sso": "SSO-ээр нэвтрэх",
+    "idp_list_label": "Нэвтрэх аргаа сонгоно уу",
+    "idp_start_failed": "{provider}-ээр нэвтрэлтийг эхлүүлж чадсангүй. Дахин оролдоно уу.",
     "add_account_title": "Бүртгэл нэмэх",
     "add_account_subtitle": "Өөр бүртгэлээр нэвтрэх",
     "cancel": "Болих",
