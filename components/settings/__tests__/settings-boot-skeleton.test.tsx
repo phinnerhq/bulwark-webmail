@@ -19,7 +19,7 @@ vi.mock('@/hooks/use-media-query', async (importOriginal) => ({
   useMediaQuery: () => false,
   useDeviceDetection: () => ({ isMobile: false, isTablet: false, isDesktop: true }),
 }));
-vi.mock('@/hooks/use-config', () => ({ useConfig: () => ({ appName: 'Mail', stalwartFeaturesEnabled: true }) }));
+vi.mock('@/hooks/use-config', () => ({ useConfig: () => ({ appName: 'Mail', stalwartFeaturesEnabled: true, maskedAddressDomain: 'mask.example.com' }) }));
 vi.mock('@/components/layout/navigation-rail', () => ({ NavigationRail: () => null }));
 vi.mock('@/components/layout/sidebar-apps-modal', () => ({ SidebarAppsModal: () => null }));
 vi.mock('@/components/plugins/app-top-banner-slot', () => ({ AppTopBannerSlot: () => null }));

@@ -165,6 +165,7 @@ export {
   IconMailX as MailX,
   IconInbox as Mails,
   IconMapPin as MapPin,
+  IconMasksTheater as MasksTheater,
   IconMaximize as Maximize2,
   IconMenu2 as Menu,
   IconArrowMerge as Merge,

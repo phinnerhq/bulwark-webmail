@@ -69,6 +69,8 @@ export interface ConfigData {
   oauthRevokeOnSignOut?: boolean;
   /** Server build only; Lite reads it from policy.json (stores/policy-store.ts). */
   errorReporting?: ClientSettings;
+  /** Domain of masked addresses, or '' when they are not offered. */
+  maskedAddressDomain: string;
 }
 
 interface AppConfig extends ConfigData {
@@ -229,6 +231,7 @@ function configState(data: ConfigData): AppConfig {
       accountManagementUrl: data.accountManagementUrl,
       accountManagementLabel: data.accountManagementLabel,
       noThirdPartyTraffic: data.noThirdPartyTraffic,
+      maskedAddressDomain: data.maskedAddressDomain,
       isLoading: false,
       error: null,
     };
@@ -299,6 +302,7 @@ export function useConfig(): AppConfig {
     accountManagementUrl: configCache?.accountManagementUrl || '',
     accountManagementLabel: configCache?.accountManagementLabel || '',
     noThirdPartyTraffic: configCache?.noThirdPartyTraffic ?? false,
+    maskedAddressDomain: configCache?.maskedAddressDomain || '',
     isLoading: !configCache,
     error: null,
   });

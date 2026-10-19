@@ -7,7 +7,7 @@ import type { SettingsSearchTab } from '@/lib/settings-search';
 export const SETTINGS_TAB_IDS: readonly SettingsSearchTab[] = [
   'account', 'general', 'notifications', 'appearance', 'accessibility',
   'message_list', 'reading', 'composing', 'vacation', 'filters', 'organize',
-  'security', 'sharing', 'recovery', 'calendar', 'contacts', 'files',
+  'security', 'masked_addresses', 'sharing', 'recovery', 'calendar', 'contacts', 'files',
   'files_sync', 'addons', 'offline', 'privacy', 'backup', 'desktop',
   'troubleshooting', 'about',
 ];

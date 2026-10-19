@@ -149,3 +149,33 @@ test("a sign-in left unfinished in the browser does not claim the next one's ret
   await signInWith(page, "South");
   await expectMailView(page);
 });
+
+test("masked addresses: make one, turn it off and delete it from Settings", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await signInWith(page, "North");
+  await expectMailView(page);
+  const stored = async () => (await page.request.get(`${idp}/__aliases?person=alice@example.com`)).json();
+
+  await page.goto("/settings/masked_addresses");
+  await page.getByTestId("masked-address-label").fill("Netflix");
+  await page.getByTestId("masked-address-create").click();
+
+  const row = page.getByTestId("masked-address");
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText("Netflix");
+  const email = (await row.locator(".font-mono").textContent()) ?? "";
+  expect(email).toMatch(/^[a-z]+\.[a-z]+@anon\.example\.com$/);
+  // A new mask is copied, ready to paste into the sign-up form.
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(email);
+  expect(await stored()).toEqual([{ name: email.split("@")[0], domainId: "f", enabled: true, description: "Netflix" }]);
+
+  await row.getByTestId("masked-address-toggle").click();
+  await expect(row.getByTestId("masked-address-toggle")).toHaveAttribute("aria-checked", "false");
+  expect((await stored())[0].enabled).toBe(false);
+
+  await row.getByRole("button", { name: `Delete ${email}` }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
+  await expect(row).toHaveCount(0);
+  // Kept, switched off, so the address is never handed to anyone else.
+  expect((await stored())[0]).toMatchObject({ name: email.split("@")[0], enabled: false });
+});

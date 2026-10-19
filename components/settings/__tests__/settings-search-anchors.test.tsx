@@ -55,6 +55,7 @@ const pages = {
   filters: (await import('../filter-settings')).FilterSettings,
   organize: (await import('../organize-settings')).OrganizeSettings,
   security: (await import('../account-security-settings')).AccountSecuritySettings,
+  masked_addresses: (await import('../masked-address-settings')).MaskedAddressSettings,
   sharing: (await import('../delegates/delegates-settings')).DelegatesSettings,
   recovery: (await import('../recover-deleted-settings')).RecoverDeletedSettings,
   calendar: (await import('../calendar-settings')).CalendarSettings,
@@ -128,7 +129,7 @@ const TAB_PAGES: Record<string, string[]> = {
   account: ['account'], general: ['general'], notifications: ['notifications'], appearance: ['appearance'],
   accessibility: ['accessibility'],
   message_list: ['message_list'], reading: ['reading'], composing: ['composing'], vacation: ['vacation'],
-  filters: ['filters'], organize: ['organize'], security: ['security'], sharing: ['sharing'], recovery: ['recovery'], calendar: ['calendar', 'calendar2'],
+  filters: ['filters'], organize: ['organize'], security: ['security'], masked_addresses: ['masked_addresses'], sharing: ['sharing'], recovery: ['recovery'], calendar: ['calendar', 'calendar2'],
   contacts: ['contacts', 'contacts2'], files: ['files'], files_sync: ['files_sync'], addons: ['addons'], backup: ['backup'],
   offline: ['offline'], privacy: ['privacy'], about: ['about'], desktop: ['desktop'], troubleshooting: ['troubleshooting'],
 };

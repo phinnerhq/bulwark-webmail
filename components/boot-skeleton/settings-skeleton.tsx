@@ -20,6 +20,7 @@ export interface SettingsSkeletonProps {
  */
 const OPTIONAL: Partial<Record<SettingsSearchTab, string>> = {
   security: "boot-no-settings-security:hidden",
+  masked_addresses: "boot-no-settings-masked-addresses:hidden",
   sharing: "boot-no-settings-sharing:hidden",
   filters: "boot-no-settings-filters:hidden",
   vacation: "boot-no-settings-vacation:hidden",

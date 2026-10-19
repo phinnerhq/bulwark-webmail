@@ -80,4 +80,6 @@ export const SERVER_STATE_ALLOWLIST: AllowedState[] = [
   { site: 'lib/utils.ts#dateFormatters', class: 'cache', why: 'Intl formatters' },
   { site: 'lib/utils.ts#formattedDates', class: 'cache', why: 'list dates by message time, settings and minute; capped at 2000' },
   { site: 'lib/wopi/files.ts#blobUrlCache', class: 'cache', why: 'JMAP blob URL templates per server, 5 min' },
+  { site: 'lib/masked-addresses/server.ts#clients', class: 'per-process', why: 'JMAP service clients per server URL and API key, holding this process\'s connections' },
+  { site: 'lib/masked-addresses/server.ts#accountLocks', class: 'per-process', why: 'serializes this process\'s alias writes per account; enough while the webmail runs as a single node' },
 ];

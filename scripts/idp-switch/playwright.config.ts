@@ -67,6 +67,9 @@ export default defineConfig({
         JMAP_SERVER_URL: idp,
         JMAP_SERVERS: JSON.stringify([server("north", "North"), server("south", "South")]),
         SESSION_SECRET: "idp-switch-session-secret-0123456789abcdef",
+        // The mock answers Stalwart's management calls for this key.
+        MASKED_ADDRESS_DOMAIN: "anon.example.com",
+        MASKED_ADDRESS_API_KEY: "API_mock-masked-addresses",
         NODE_EXTRA_CA_CERTS: cert,
         ADMIN_CONFIG_DIR: join(workDir, "config"),
         ADMIN_STATE_DIR: join(workDir, "state"),
