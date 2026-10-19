@@ -75,6 +75,8 @@
       "missing_params": "缺少授權資料。請嘗試重新登入。",
       "token_exchange_failed": "無法完成身分驗證。請再試一次。",
       "access_denied": "存取遭拒。請聯絡管理員。",
+      "mailbox_unavailable": "已登入，但郵件伺服器上沒有此帳號的信箱。",
+      "back_to_mail": "返回郵件",
       "back_to_login": "返回登入頁面"
     }
   },

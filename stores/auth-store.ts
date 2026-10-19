@@ -92,13 +92,13 @@ interface AuthState {
   loginWithServerSso: (code: string, state: string) => Promise<boolean>;
   loginDemo: () => Promise<boolean>;
   /**
-   * Obtain a usable access token for the active account.
+   * Obtain a usable access token for `accountId`, by default the active account.
    *
    * Renews against the IdP by default. `allowCached` lets a session restore
    * reuse the token the server still holds for this slot - IdPs that gate
    * refresh tokens behind an `nbf` claim reject an early renewal outright.
    */
-  refreshAccessToken: (options?: { allowCached?: boolean }) => Promise<string | null>;
+  refreshAccessToken: (options?: { allowCached?: boolean; accountId?: string }) => Promise<string | null>;
   /**
    * Sign out of the active account. Switches to the next signed-in account
    * when there is one; otherwise ends the identity provider's session too
@@ -1131,13 +1131,33 @@ function shouldRetryRefresh(slot: number, accountId?: string): boolean {
   return useAuthStore.getState().isAuthenticated;
 }
 
-function scheduleRefresh(expiresIn: number, refreshFn: () => Promise<string | null>, accountId?: string): void {
+/**
+ * Connects the client of a sign-in in progress, which renews nothing yet. Its
+ * token was issued a moment ago, so a refusal is final: the mail server has no
+ * mailbox for this person, as when Stalwart does not host their domain. A
+ * renewal would have fetched the active account's token and signed in as that
+ * account instead.
+ */
+async function connectSignIn(client: JMAPClient): Promise<void> {
+  try {
+    await client.connect();
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('Authentication failed')) throw new Error('mailbox_unavailable');
+    throw error;
+  }
+}
+
+function scheduleRefresh(
+  expiresIn: number,
+  refreshFn: (options?: { accountId?: string }) => Promise<string | null>,
+  accountId?: string,
+): void {
   if (accountId) {
     const existing = refreshTimers.get(accountId);
     if (existing) clearTimeout(existing);
     const refreshAt = Math.max((expiresIn - 60) * 1000, 10_000);
     refreshTimers.set(accountId, setTimeout(() => {
-      refreshFn().catch((err) => {
+      refreshFn({ accountId }).catch((err) => {
         debug.error(`Scheduled token refresh failed for ${accountId}:`, err);
       });
     }, refreshAt));
@@ -1439,7 +1459,7 @@ export const useAuthStore = create<AuthState>()(
             }
 
             if (bearerToken) {
-              client = JMAPClient.withBearer(serverUrl, bearerToken, username, () => get().refreshAccessToken());
+              client = JMAPClient.withBearer(serverUrl, bearerToken, username, () => get().refreshAccessToken({ accountId }));
               await client.connect();
               oauthAccessToken = bearerToken;
               upgradedToOAuth = true;
@@ -1831,9 +1851,8 @@ export const useAuthStore = create<AuthState>()(
 
           const { access_token, expires_in } = await tokenRes.json();
 
-          const refreshFn = get().refreshAccessToken;
-          const client = JMAPClient.withBearer(serverUrl, access_token, '', () => refreshFn());
-          await client.connect();
+          const client = JMAPClient.withBearer(serverUrl, access_token, '');
+          await connectSignIn(client);
 
           const jmapUsername = client.getUsername();
           const { identities, primaryIdentity } = loadIdentities(await client.getIdentities(), jmapUsername);
@@ -1881,6 +1900,7 @@ export const useAuthStore = create<AuthState>()(
           // mid-flow). Either way, the cookie's slot is the source of truth.
           accountStore.updateAccount(accountId, { cookieSlot: slot, providerSession: true });
           accountStore.setActiveAccount(accountId);
+          client.setTokenRefresh(() => get().refreshAccessToken({ accountId }));
 
           await syncStalwartAuthContext(serverUrl, username, client.getAuthHeader(), slot);
           void syncAccountDisplayName(accountId, client, primaryIdentity?.name);
@@ -1984,9 +2004,8 @@ export const useAuthStore = create<AuthState>()(
             throw new Error('Server URL not configured');
           }
 
-          const refreshFn = get().refreshAccessToken;
-          const client = JMAPClient.withBearer(ssoServerUrl, access_token, '', () => refreshFn());
-          await client.connect();
+          const client = JMAPClient.withBearer(ssoServerUrl, access_token, '');
+          await connectSignIn(client);
 
           const jmapUsername = client.getUsername();
           const { identities, primaryIdentity } = loadIdentities(await client.getIdentities(), jmapUsername);
@@ -2025,6 +2044,7 @@ export const useAuthStore = create<AuthState>()(
           // re-add and concurrent-tab cases this guards against.
           accountStore.updateAccount(accountId, { cookieSlot: slot, providerSession: true });
           accountStore.setActiveAccount(accountId);
+          client.setTokenRefresh(() => get().refreshAccessToken({ accountId }));
 
           await syncStalwartAuthContext(ssoServerUrl, username, client.getAuthHeader(), slot);
           void syncAccountDisplayName(accountId, client, primaryIdentity?.name);
@@ -2083,14 +2103,15 @@ export const useAuthStore = create<AuthState>()(
       },
 
       refreshAccessToken: async (options) => {
-        if (refreshPromise) return refreshPromise;
-
-        const accountId = get().activeAccountId;
-        if (accountId && refreshPromises.has(accountId)) {
-          return refreshPromises.get(accountId)!;
-        }
+        const accountId = options?.accountId ?? get().activeAccountId;
+        const pending = accountId ? refreshPromises.get(accountId) : refreshPromise;
+        if (pending) return pending;
+        // Accounts other than the active one renew their own client only.
+        const isActive = () => accountId === get().activeAccountId;
 
         const account = accountId ? useAccountStore.getState().getAccountById(accountId) : null;
+        // Not registered yet (still signing in): no slot of its own to renew from.
+        if (options?.accountId && !account) return null;
         const slot = account?.cookieSlot ?? 0;
         // The account is being signed out: a renewal now would only undo that.
         if (closingSlots.has(slot)) return null;
@@ -2110,6 +2131,14 @@ export const useAuthStore = create<AuthState>()(
               // maintenance windows and offline spells.
               if (res.status === 401) {
                 resetRefreshBackoff(accountId ?? undefined);
+                if (accountId && !isActive()) {
+                  useAccountStore.getState().updateAccount(accountId, {
+                    isConnected: false,
+                    hasError: true,
+                    errorMessage: 'Session expired',
+                  });
+                  return null;
+                }
                 notifyParent('sso:session-expired');
                 markSessionExpired();
                 get().logout({ endProviderSession: false });
@@ -2124,7 +2153,7 @@ export const useAuthStore = create<AuthState>()(
                 notifyParent('sso:session-expired');
                 markSessionExpired();
                 // removeAccount() on the active account would sign out as if the user asked to.
-                if (accountId && accountId !== get().activeAccountId) get().removeAccount(accountId);
+                if (accountId && !isActive()) get().removeAccount(accountId);
                 else get().logout({ endProviderSession: false });
                 return null;
               }
@@ -2141,7 +2170,8 @@ export const useAuthStore = create<AuthState>()(
             // Signed out while the renewal was in flight: nothing to keep alive.
             if (closingSlots.has(slot)) return null;
 
-            get().client?.updateAccessToken(access_token);
+            if (accountId) clients.get(accountId)?.updateAccessToken(access_token);
+            if (isActive()) get().client?.updateAccessToken(access_token);
 
             if (account) {
               await syncStalwartAuthContext(
@@ -2152,10 +2182,12 @@ export const useAuthStore = create<AuthState>()(
               );
             }
 
-            set({
-              accessToken: access_token,
-              tokenExpiresAt: Date.now() + expires_in * 1000,
-            });
+            if (isActive()) {
+              set({
+                accessToken: access_token,
+                tokenExpiresAt: Date.now() + expires_in * 1000,
+              });
+            }
 
             resetRefreshBackoff(accountId ?? undefined);
             scheduleRefresh(expires_in, get().refreshAccessToken, accountId ?? undefined);
@@ -2170,13 +2202,13 @@ export const useAuthStore = create<AuthState>()(
             }
             return null;
           } finally {
-            refreshPromise = null;
             if (accountId) refreshPromises.delete(accountId);
+            else refreshPromise = null;
           }
         })();
 
-        refreshPromise = promise;
         if (accountId) refreshPromises.set(accountId, promise);
+        else refreshPromise = promise;
 
         return promise;
       },
@@ -2426,8 +2458,8 @@ export const useAuthStore = create<AuthState>()(
               const res = await fetchSlotAccessToken(targetAccount.cookieSlot);
               if (res.ok) {
                 const { access_token, expires_in } = await res.json();
-                const refreshFn = get().refreshAccessToken;
-                targetClient = JMAPClient.withBearer(targetAccount.serverUrl, access_token, targetAccount.username, () => refreshFn());
+                // Bound to the target: the account being left is still the active one.
+                targetClient = JMAPClient.withBearer(targetAccount.serverUrl, access_token, targetAccount.username, () => get().refreshAccessToken({ accountId }));
                 bindClientStatusHandlers(targetClient, set, get, accountId);
                 await targetClient.connect();
                 clients.set(accountId, targetClient);
@@ -2706,8 +2738,7 @@ export const useAuthStore = create<AuthState>()(
                 const res = await fetchSlotAccessToken(account.cookieSlot);
                 if (res.ok) {
                   const { access_token, expires_in } = await res.json();
-                  const refreshFn = get().refreshAccessToken;
-                  const client = JMAPClient.withBearer(account.serverUrl, access_token, account.username, () => refreshFn());
+                  const client = JMAPClient.withBearer(account.serverUrl, access_token, account.username, () => get().refreshAccessToken({ accountId: account.id }));
                   bindClientStatusHandlers(client, set, get, account.id);
                   const contextSync = syncStalwartAuthContext(account.serverUrl, account.username, client.getAuthHeader(), account.cookieSlot);
                   await client.connect();

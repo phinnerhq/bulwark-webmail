@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useAuthStore } from "@/stores/auth-store";
+import { useAccountStore } from "@/stores/account-store";
 import { apiFetch, getPathPrefix, toRouterPath } from "@/lib/browser-navigation";
 import { buildSettingsPath } from "@/lib/deep-links";
 import { LITE_OAUTH_AVAILABLE, getLiteOAuthRedirectUri } from "@/lib/auth/lite-oauth";
@@ -12,6 +13,11 @@ import { Button } from "@/components/ui/button";
 import { useParams } from "next/navigation";
 import { buildMobileHandoffUrl, mobileHandoffTarget } from "@/lib/auth/mobile-handoff";
 import { MobileHandoffConsent } from "@/components/auth/mobile-handoff-consent";
+
+/** Why the auth store's sign-in failed, as an `oauth_error` message key. */
+function signInError(): string {
+  return useAuthStore.getState().error === "mailbox_unavailable" ? "mailbox_unavailable" : "token_exchange_failed";
+}
 
 function OAuthCallbackInner() {
   const router = useRouter();
@@ -23,6 +29,7 @@ function OAuthCallbackInner() {
   // A sign-in started for the mobile app, waiting for the user to confirm
   // the handoff (lib/auth/mobile-handoff.ts).
   const [pendingHandoff, setPendingHandoff] = useState<{ url: string; username: string } | null>(null);
+  const hasAccounts = useAccountStore((s) => s.accounts.length > 0);
   // The authorization code is single-use. React's development double effect
   // ran this twice: the second pass no longer saw the pairing re-auth flag
   // (the first had removed it) and spent the code on the login flow instead.
@@ -88,17 +95,18 @@ function OAuthCallbackInner() {
     }
 
     const savedState = sessionStorage.getItem("oauth_state");
+    const codeVerifier = sessionStorage.getItem("oauth_code_verifier");
+    const serverUrl = sessionStorage.getItem("oauth_server_url");
+    const serverId = sessionStorage.getItem("oauth_server_id") || undefined;
+    // A browser-side flow gets one return. Left behind by a failed or
+    // abandoned sign-in, it would claim the callback of the next one started
+    // server-side, whose state it cannot match.
+    for (const key of ["oauth_state", "oauth_code_verifier", "oauth_server_url", "oauth_server_id", "oauth_add_account_mode"]) {
+      sessionStorage.removeItem(key);
+    }
 
-    if (savedState) {
+    if (savedState && state === savedState) {
       // Classic flow - sessionStorage has the PKCE state (same-tab OAuth)
-      if (!state || state !== savedState) {
-        setError("invalid_state");
-        return;
-      }
-
-      const codeVerifier = sessionStorage.getItem("oauth_code_verifier");
-      const serverUrl = sessionStorage.getItem("oauth_server_url");
-      const serverId = sessionStorage.getItem("oauth_server_id") || undefined;
 
       if (!codeVerifier || !serverUrl) {
         setError("missing_params");
@@ -115,11 +123,6 @@ function OAuthCallbackInner() {
       loginWithOAuth(serverUrl, code, codeVerifier, redirectUri, serverId)
         .then((success) => {
           if (success) {
-            sessionStorage.removeItem("oauth_state");
-            sessionStorage.removeItem("oauth_code_verifier");
-            sessionStorage.removeItem("oauth_server_url");
-            sessionStorage.removeItem("oauth_server_id");
-            sessionStorage.removeItem("oauth_add_account_mode");
             let redirectTo = `${prefix}/${params.locale}`;
             try {
               const saved = sessionStorage.getItem('redirect_after_login');
@@ -130,7 +133,7 @@ function OAuthCallbackInner() {
             } catch { /* sessionStorage may be unavailable */ }
             router.push(toRouterPath(redirectTo));
           } else {
-            setError("token_exchange_failed");
+            setError(signInError());
           }
         })
         .catch(() => {
@@ -219,7 +222,7 @@ function OAuthCallbackInner() {
             } catch { /* sessionStorage may be unavailable */ }
             router.push(toRouterPath(redirectTo));
           } else {
-            setError("token_exchange_failed");
+            setError(signInError());
           }
         })
         .catch(() => {
@@ -258,11 +261,12 @@ function OAuthCallbackInner() {
           <p className="text-muted-foreground text-sm mb-6">
             {t(`oauth_error.${error}`)}
           </p>
+          {/* Adding an account failed: the accounts already signed in are still there. */}
           <Button
             variant="outline"
-            onClick={() => router.push(toRouterPath(`${getPathPrefix(params.locale as string)}/${params.locale}/login`))}
+            onClick={() => router.push(toRouterPath(`${getPathPrefix(params.locale as string)}/${params.locale}${hasAccounts ? "" : "/login"}`))}
           >
-            {t("oauth_error.back_to_login")}
+            {t(hasAccounts ? "oauth_error.back_to_mail" : "oauth_error.back_to_login")}
           </Button>
         </div>
       </div>

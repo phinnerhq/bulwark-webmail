@@ -75,6 +75,8 @@
       "missing_params": "Chýbajú autorizačné dáta. Skúste sa prihlásiť znova.",
       "token_exchange_failed": "Overenie sa nepodarilo dokončiť. Skúste to znova.",
       "access_denied": "Prístup bol zamietnutý. Kontaktujte správcu.",
+      "mailbox_unavailable": "Prihlásenie prebehlo, ale poštový server pre tento účet nemá žiadnu schránku.",
+      "back_to_mail": "Späť na poštu",
       "back_to_login": "Späť na prihlásenie"
     }
   },

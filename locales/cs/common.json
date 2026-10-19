@@ -75,6 +75,8 @@
       "missing_params": "Chybí autorizační data. Zkuste se přihlásit znovu.",
       "token_exchange_failed": "Ověření se nepodařilo dokončit. Zkuste to znovu.",
       "access_denied": "Přístup odepřen. Kontaktujte správce.",
+      "mailbox_unavailable": "Přihlášení proběhlo, ale poštovní server pro tento účet nemá žádnou schránku.",
+      "back_to_mail": "Zpět na poštu",
       "back_to_login": "Zpět na přihlášení"
     }
   },

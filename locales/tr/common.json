@@ -75,6 +75,8 @@
       "missing_params": "Yetkilendirme verisi eksik. Lütfen tekrar giriş yapmayı deneyin.",
       "token_exchange_failed": "Kimlik doğrulama tamamlanamadı. Lütfen tekrar deneyin.",
       "access_denied": "Erişim reddedildi. Lütfen yöneticinizle iletişime geçin.",
+      "mailbox_unavailable": "Giriş yapıldı, ancak posta sunucusunda bu hesap için bir posta kutusu yok.",
+      "back_to_mail": "Postalara dön",
       "back_to_login": "Giriş sayfasına dön"
     }
   },

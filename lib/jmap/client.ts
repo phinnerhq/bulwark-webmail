@@ -1104,6 +1104,11 @@ export class JMAPClient implements IJMAPClient {
     this.authHeader = `Bearer ${token}`;
   }
 
+  /** Sets how a bearer client renews a token the server refused. */
+  setTokenRefresh(onTokenRefresh: () => Promise<string | null>): void {
+    this.onTokenRefresh = onTokenRefresh;
+  }
+
   // Throws when the server does not answer: an empty result would read as
   // "these messages are gone", and callers would drop them from the list.
   async getSomeEmails(emailsId: string[], accountId?: string): Promise<Email[]> {

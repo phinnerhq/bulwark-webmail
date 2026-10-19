@@ -75,6 +75,8 @@
       "missing_params": "Lipsesc datele de autentificare. Vă rugăm să încercați să vă autentificați din nou.",
       "token_exchange_failed": "Autentificarea nu a reușit. Vă rugăm să încercați din nou.",
       "access_denied": "Accesul a fost refuzat. Vă rugăm să contactați administratorul.",
+      "mailbox_unavailable": "Autentificat, dar serverul de e-mail nu are nicio căsuță poștală pentru acest cont.",
+      "back_to_mail": "Înapoi la e-mail",
       "back_to_login": "Înapoi la autentificare"
     }
   },

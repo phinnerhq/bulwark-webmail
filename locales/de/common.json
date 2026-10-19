@@ -75,6 +75,8 @@
       "missing_params": "Fehlende Autorisierungsdaten. Bitte erneut anmelden.",
       "token_exchange_failed": "Authentifizierung konnte nicht abgeschlossen werden. Bitte erneut versuchen.",
       "access_denied": "Zugriff verweigert. Bitte kontaktieren Sie Ihren Administrator.",
+      "mailbox_unavailable": "Angemeldet, aber der Mailserver hat kein Postfach für dieses Konto.",
+      "back_to_mail": "Zurück zu den E-Mails",
       "back_to_login": "Zurück zur Anmeldung"
     }
   },

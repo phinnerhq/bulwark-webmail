@@ -75,6 +75,8 @@
       "missing_params": "인증 데이터가 없어요. 다시 로그인해 주세요.",
       "token_exchange_failed": "인증을 완료하지 못했어요. 다시 시도해 주세요.",
       "access_denied": "접근이 거부되었어요. 관리자에게 문의해 주세요.",
+      "mailbox_unavailable": "로그인했지만 메일 서버에 이 계정의 사서함이 없습니다.",
+      "back_to_mail": "메일로 돌아가기",
       "back_to_login": "로그인 화면으로 돌아가기"
     }
   },

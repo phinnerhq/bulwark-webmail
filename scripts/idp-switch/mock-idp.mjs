@@ -38,6 +38,9 @@ const accessTokens = new Map(); // token -> person
 const events = [];
 // auth_time counts in seconds; a test can freeze it to make sign-ins tie.
 let frozenAuthTime = null;
+// People the mail server has no mailbox for: their tokens are refused, as
+// Stalwart refuses an account on a domain it does not host.
+const withoutMailbox = new Set();
 
 const id = () => randomBytes(12).toString('hex');
 const now = () => Math.floor(Date.now() / 1000);
@@ -236,7 +239,7 @@ async function jmap(req, res, url) {
   };
   if (req.method === 'OPTIONS') return send(res, 204, '', cors);
   const person = jmapPerson(req);
-  if (!person) return send(res, 401, { type: 'unauthorized' }, cors);
+  if (!person || withoutMailbox.has(person)) return send(res, 401, { type: 'unauthorized' }, cors);
   if (url.pathname === '/.well-known/jmap' || url.pathname === '/jmap/session') return send(res, 200, jmapSession(person), cors);
   if (url.pathname === '/jmap/api') {
     const request = JSON.parse(await read(req) || '{}');
@@ -273,10 +276,15 @@ https.createServer({ cert: readFileSync(certPath), key: readFileSync(keyPath) },
       events.length = 0;
       for (const key of Object.keys(nextPerson)) delete nextPerson[key];
       frozenAuthTime = null;
+      withoutMailbox.clear();
       return send(res, 200, { ok: true });
     }
     if (path === '/__freeze-auth-time') {
       frozenAuthTime = now();
+      return send(res, 200, { ok: true });
+    }
+    if (path === '/__no-mailbox') {
+      withoutMailbox.add(url.searchParams.get('person'));
       return send(res, 200, { ok: true });
     }
     if (path === '/__next-person') {

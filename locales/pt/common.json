@@ -75,6 +75,8 @@
       "missing_params": "Dados de autorização ausentes. Tente entrar novamente.",
       "token_exchange_failed": "Não foi possível concluir a autenticação. Tente novamente.",
       "access_denied": "Acesso negado. Entre em contato com seu administrador.",
+      "mailbox_unavailable": "Sessão iniciada, mas o servidor de e-mail não tem nenhuma caixa de correio para esta conta.",
+      "back_to_mail": "Voltar ao e-mail",
       "back_to_login": "Voltar ao login"
     }
   },
