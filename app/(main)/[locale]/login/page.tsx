@@ -391,6 +391,9 @@ function LoginPageContent() {
   const [lastIdp] = useState(readLastIdp);
   const [idpPending, setIdpPending] = useState<string | null>(null);
   const [idpFailed, setIdpFailed] = useState<string | null>(null);
+  // Held on the loading screen while a link's sign-in starts, so the list
+  // does not flash up before the provider takes over.
+  const [followingLink, setFollowingLink] = useState(linkedServerId !== null);
   const [totpCode, setTotpCode] = useState("");
   const [showTotpField, setShowTotpField] = useState(false);
   // Access-token sign-in (Bearer auth) in place of username and password.
@@ -835,7 +838,9 @@ function LoginPageContent() {
     // Back from the provider through the back/forward cache: the page comes
     // back as it was left, with the chosen button still spinning.
     const onPageShow = (e: PageTransitionEvent) => {
-      if (e.persisted) setIdpPending(null);
+      if (!e.persisted) return;
+      setIdpPending(null);
+      setFollowingLink(false);
     };
     window.addEventListener("pageshow", onPageShow);
     return () => window.removeEventListener("pageshow", onPageShow);
@@ -1022,17 +1027,19 @@ function LoginPageContent() {
   const linkedSignIn = useRef(linkedServerId);
   useEffect(() => {
     const serverId = linkedSignIn.current;
-    if (!serverId || configLoading || !showIdpList) return;
+    if (!serverId || configLoading) return;
     linkedSignIn.current = null;
     if (signedOutOnPurpose.current === null) signedOutOnPurpose.current = consumeSignedOut();
-    if (signedOutOnPurpose.current || ssoError || isAuthenticated || resumeServerId) return;
-    const server = jmapServers.find((s) => s.id === serverId);
-    if (!server) return;
+    const server = showIdpList ? jmapServers.find((s) => s.id === serverId) : undefined;
+    if (!server || signedOutOnPurpose.current || ssoError || isAuthenticated || resumeServerId) {
+      setFollowingLink(false);
+      return;
+    }
     const url = new URL(window.location.href);
     url.searchParams.delete("server");
     window.history.replaceState(window.history.state, "", url);
     void handleIdpSelect(server);
-  });
+  }, [configLoading, showIdpList, jmapServers, ssoError, isAuthenticated, resumeServerId, handleIdpSelect]);
 
   // The server HTML, and every visit until /api/config answers: the card's
   // shape, the same one signed-out visitors of the app pages get first. Also
@@ -1041,7 +1048,8 @@ function LoginPageContent() {
   // fetched the config by then, and drawing the form would throw the HTML away.
   const hydrating = useSyncExternalStore(neverChanges, notHydrating, isHydrating);
   useWarmMailViewWhenIdle(!isMobileHandoff && !configLoading && !hydrating);
-  if (configLoading || hydrating) {
+  // A failed start shows the list, with the error on the link's button.
+  if (configLoading || hydrating || (followingLink && !idpFailed)) {
     return <LoginSkeleton label={t("loading")} />;
   }
 
