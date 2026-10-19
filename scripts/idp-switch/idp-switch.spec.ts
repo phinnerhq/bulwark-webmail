@@ -179,3 +179,37 @@ test("masked addresses: make one, turn it off and delete it from Settings", asyn
   // Kept, switched off, so the address is never handed to anyone else.
   expect((await stored())[0]).toMatchObject({ name: email.split("@")[0], enabled: false });
 });
+
+test("a link naming a provider signs in there", async ({ page }) => {
+  await page.goto("/login?server=south");
+  await expectMailView(page);
+
+  const events = await idpEvents(page);
+  expect(events.filter((e) => e.type === "login").map((e) => e.person)).toEqual(["bob@example.com"]);
+});
+
+test("back from the provider a link sent you to shows the list, not the provider again", async ({ page }) => {
+  // Held at the provider's door, as a person who changed their mind would be.
+  let authorizations = 0;
+  await page.route(`${idp}/realms/mail/protocol/openid-connect/auth**`, (route) => {
+    authorizations++;
+    return route.fulfill({ contentType: "text/html", body: "<title>Provider</title>" });
+  });
+
+  await page.goto("/login?server=south");
+  await expect(page).toHaveTitle("Provider");
+  await page.goBack();
+
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByRole("group", { name: "Choose how to sign in" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "South" })).toBeEnabled();
+  expect(authorizations).toBe(1);
+});
+
+test("a link naming no known provider leaves the list to choose from", async ({ page }) => {
+  await page.goto("/login?server=west");
+  await expect(page.getByRole("group", { name: "Choose how to sign in" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "North" })).toBeEnabled();
+
+  expect((await idpEvents(page)).filter((e) => e.type === "login")).toEqual([]);
+});
