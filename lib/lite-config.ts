@@ -113,6 +113,8 @@ export function applyLiteConfig(raw: unknown, defaults?: { jmapServerUrl?: strin
     // Same browser-side switches as the server build (lib/outgoing-hosts.ts).
     noThirdPartyTraffic: parseNoThirdPartyValue(input.noThirdPartyTraffic),
     oauthRevokeOnSignOut: bool(input.oauthRevokeOnSignOut, true),
+    // Needs the server-side service key.
+    maskedAddressDomain: '',
     ...LITE_FORCED_FLAGS,
   };
 }

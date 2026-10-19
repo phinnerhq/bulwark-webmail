@@ -24,6 +24,7 @@ import {
   Key,
   Monitor,
   Wrench,
+  MasksTheater,
   type AppIcon,
 } from '@/components/icons';
 import type { SettingsSearchTab } from '@/lib/settings-search';
@@ -46,6 +47,7 @@ export const SETTINGS_TAB_ICONS: Record<SettingsSearchTab, AppIcon> = {
   filters: Filter,
   organize: FolderOpen,
   security: Key,
+  masked_addresses: MasksTheater,
   sharing: Users,
   recovery: RotateCcw,
   calendar: Calendar,
@@ -70,7 +72,7 @@ export type SettingsTabGroup = 'top' | 'mail' | 'apps' | 'bottom';
  * from the last session's hints.
  */
 export const SETTINGS_NAV_GROUPS: readonly { group: SettingsTabGroup; tabs: readonly SettingsSearchTab[] }[] = [
-  { group: 'top', tabs: ['account', 'security', 'privacy', 'sharing', 'notifications', 'general', 'desktop', 'offline', 'appearance', 'accessibility'] },
+  { group: 'top', tabs: ['account', 'security', 'masked_addresses', 'privacy', 'sharing', 'notifications', 'general', 'desktop', 'offline', 'appearance', 'accessibility'] },
   { group: 'mail', tabs: ['message_list', 'reading', 'composing', 'organize', 'filters', 'vacation', 'recovery'] },
   { group: 'apps', tabs: ['calendar', 'contacts', 'files', 'files_sync', 'addons'] },
   { group: 'bottom', tabs: ['backup', 'troubleshooting', 'about'] },

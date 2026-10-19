@@ -42,6 +42,7 @@ import { IS_LITE } from '@/lib/lite';
 import { HelpLinks } from '@/components/layout/help-links';
 import { OrganizeSettings } from '@/components/settings/organize-settings';
 import { AccountSecuritySettings } from '@/components/settings/account-security-settings';
+import { MaskedAddressSettings } from '@/components/settings/masked-address-settings';
 import { FilesSettingsComponent } from '@/components/settings/files-settings';
 import { DesktopFilesSettings } from '@/components/settings/desktop-files-settings';
 import { useFilesSyncStore } from '@/stores/files-sync-store';
@@ -282,7 +283,7 @@ export function SettingsApp({ linkSegments: routeSegments }: SettingsAppProps = 
   const mvShell = useMountainViewShell(isEmbedded);
   const [initialCheckDone, setInitialCheckDone] = useState(() => useAuthStore.getState().isAuthenticated && !!useAuthStore.getState().client);
   const { quota, isPushConnected } = useEmailStore();
-  const { stalwartFeaturesEnabled, appName: configAppName } = useConfig();
+  const { stalwartFeaturesEnabled, maskedAddressDomain, appName: configAppName } = useConfig();
   const appName = productName(configAppName);
   const { isFeatureEnabled } = usePolicyStore();
   const archiveActionEnabled = isFeatureEnabled('archiveActionEnabled');
@@ -751,6 +752,7 @@ export function SettingsApp({ linkSegments: routeSegments }: SettingsAppProps = 
     // You and the app
     { id: 'account', label: t('tabs.account'), icon: tabIcons.account, group: 'top' },
     ...(stalwartFeaturesEnabled ? [{ id: 'security' as Tab, label: tRoot(settingsTabLabelKey('security')), icon: tabIcons.security, group: 'top' as TabGroup }] : []),
+    ...(maskedAddressDomain ? [{ id: 'masked_addresses' as Tab, label: tRoot(settingsTabLabelKey('masked_addresses')), icon: tabIcons.masked_addresses, group: 'top' as TabGroup }] : []),
     { id: 'privacy', label: tRoot(settingsTabLabelKey('privacy')), icon: tabIcons.privacy, group: 'top' },
     ...(supportsSharing ? [{ id: 'sharing' as Tab, label: tDelegates('tab'), icon: tabIcons.sharing, group: 'top' as TabGroup }] : []),
     { id: 'notifications', label: t('tabs.notifications'), icon: tabIcons.notifications, group: 'top' },
@@ -983,6 +985,7 @@ export function SettingsApp({ linkSegments: routeSegments }: SettingsAppProps = 
       {effectiveActiveTab === 'security' && <AccountSecuritySettings />}
       {effectiveActiveTab === 'sharing' && <DelegatesSettings />}
       {effectiveActiveTab === RECOVERY_SETTINGS_TAB && <RecoverDeletedSettings />}
+      {effectiveActiveTab === 'masked_addresses' && <MaskedAddressSettings />}
       {effectiveActiveTab === 'calendar' && (
         managedAccountId
           ? <CalendarManagementSettings />

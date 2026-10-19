@@ -88,6 +88,7 @@ const configValidators = {
     && typeof value.environment === 'string'
     && typeof value.collect === 'boolean'
   ),
+  maskedAddressDomain: isString,
 } satisfies Validators<ConfigData>;
 
 /**

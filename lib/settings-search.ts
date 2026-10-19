@@ -15,6 +15,7 @@ export type SettingsSearchTab =
   | 'filters'
   | 'organize'
   | 'security'
+  | 'masked_addresses'
   | 'sharing'
   | 'recovery'
   | 'calendar'
@@ -453,6 +454,10 @@ export const tabSearchEntries: Record<Tab, SettingsSearchEntry[]> = {
     { label: 'ux_p3_search.updates_label', when: 'desktop', synonyms: syn2('updates') },
     { label: 'desktop_updates.channel_label', when: 'desktop' },
   ],
+  masked_addresses: [
+    { label: 'settings.masked_addresses.title' },
+    { label: 'settings.masked_addresses.create' },
+  ],
 };
 
 /** Pages whose own names are in a namespace other than `settings.tabs`. */
@@ -498,6 +503,7 @@ export const tabKeywords: Record<Tab, string> = {
   filters: 'sieve rules add create new block junk forward',
   organize: 'folders mailbox subscribe roles tags labels keywords colors nested',
   security: 'security sign in login password 2fa two-factor passkey app password mfa api key token phone mobile app pair qr thunderbird outlook apple mail imap smtp caldav carddav server settings client encryption pgp smime',
+  masked_addresses: 'mask alias anonymous burner disposable hide email sign up privacy',
   sharing: 'delegate delegation share access assistant permissions revoke folders calendars contacts colleague',
   recovery: 'recover restore undelete deleted trash emptied lost messages',
   calendar: 'event schedule appointment meeting timezone invitation ics ical webcal subscribe subscription tasks birthday working hours',

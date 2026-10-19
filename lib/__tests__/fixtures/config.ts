@@ -53,6 +53,7 @@ export function createConfig(overrides: Partial<ConfigData> = {}): ConfigData {
     accountManagementLabel: '',
     signLanguageUrl: '',
     noThirdPartyTraffic: false,
+    maskedAddressDomain: '',
     ...overrides,
   };
 }
