@@ -1023,6 +1023,7 @@
       "composing": "Composizione",
       "downloads": "Download",
       "content_senders": "Contenuto e mittenti",
+      "masked_addresses": "Indirizzi mascherati",
       "about_data": "Informazioni e dati",
       "debug": "Debug"
     },
@@ -1911,6 +1912,42 @@
         "key_label": "Chiave pubblica (S/MIME o PGP in formato ASCII)",
         "key_placeholder": "Incolla qui la tua chiave pubblica",
         "none": "Nessuna chiave pubblica configurata"
+      }
+    },
+    "masked_addresses": {
+      "title": "Indirizzi mascherati",
+      "description": "Fornisci indirizzi su {domain} invece del tuo vero indirizzo. La posta inviata a questi arriva nella tua casella e puoi disattivarne uno quando riceve spam.",
+      "description_generic": "Fornisci indirizzi usa e getta invece del tuo vero indirizzo. La posta inviata a questi arriva nella tua casella e puoi disattivarne uno quando riceve spam.",
+      "label_placeholder": "A cosa serve? (es. Netflix)",
+      "label_aria": "A cosa serve l'indirizzo mascherato",
+      "create": "Nuovo indirizzo mascherato",
+      "loading": "Caricamento degli indirizzi mascherati…",
+      "load_failed": "Impossibile caricare i tuoi indirizzi mascherati.",
+      "retry": "Riprova",
+      "empty": "Nessun indirizzo mascherato. Creane uno per il prossimo sito a cui ti iscrivi.",
+      "count": "{count} di {limit}",
+      "copy": "Copia {email}",
+      "copy_failed": "Impossibile copiare negli appunti",
+      "no_label": "Nessuna etichetta",
+      "edit_label": "Modifica etichetta",
+      "save": "Salva",
+      "send_from": "Invia da qui",
+      "send_from_hint": "Aggiungilo come identità di invio, senza il tuo nome, per rispondere da questo indirizzo",
+      "identity_created": "Ora puoi inviare da {email}",
+      "identity_failed": "Impossibile aggiungere l'identità di invio: {error}",
+      "enable": "Attiva {email}",
+      "disable": "Disattiva {email}",
+      "delete": "Elimina",
+      "delete_aria": "Elimina {email}",
+      "delete_title": "Eliminare l'indirizzo mascherato?",
+      "delete_message": "La posta per {email} verrà rifiutata d'ora in poi. L'indirizzo non verrà mai riassegnato, quindi non si può annullare.",
+      "footnote": "Gli indirizzi disattivati o eliminati rifiutano la posta, quindi il mittente riceve un avviso di mancato recapito.",
+      "errors": {
+        "limit_reached": "Hai raggiunto il limite di {limit} indirizzi mascherati. Elimina quelli che non usi più.",
+        "session_expired": "La sessione è scaduta. Ricarica la pagina e riprova.",
+        "account_not_found": "Il tuo account non è stato trovato sul server di posta.",
+        "no_free_address": "Nessun indirizzo libero trovato. Riprova.",
+        "generic": "Qualcosa è andato storto. Riprova."
       }
     },
     "identities": {

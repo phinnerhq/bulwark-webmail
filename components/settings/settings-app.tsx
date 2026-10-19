@@ -29,6 +29,7 @@ import {
   BookOpen,
   PenLine,
   EyeOff,
+  MasksTheater,
   Languages,
   Info,
   Bug,
@@ -59,6 +60,7 @@ import { DebugSettings } from '@/components/settings/debug-settings';
 import { FolderSettings } from '@/components/settings/folder-settings';
 import { KeywordSettings } from '@/components/settings/keyword-settings';
 import { AccountSecuritySettings } from '@/components/settings/account-security-settings';
+import { MaskedAddressSettings } from '@/components/settings/masked-address-settings';
 import { FilesSettingsComponent } from '@/components/settings/files-settings';
 import { DownloadsSettings } from '@/components/settings/downloads-settings';
 import { ContactsSettings } from '@/components/settings/contacts-settings';
@@ -144,6 +146,7 @@ const tabIcons: Record<Tab, AppIcon> = {
   keywords: Tags,
   security: Shield,
   content_senders: EyeOff,
+  masked_addresses: MasksTheater,
   calendar: Calendar,
   contacts: BookUser,
   files: HardDrive,
@@ -233,7 +236,7 @@ export function SettingsApp({ linkSegments: routeSegments }: SettingsAppProps = 
   const mvShell = useMountainViewShell(isEmbedded);
   const [initialCheckDone, setInitialCheckDone] = useState(() => useAuthStore.getState().isAuthenticated && !!useAuthStore.getState().client);
   const { quota, isPushConnected } = useEmailStore();
-  const { stalwartFeaturesEnabled } = useConfig();
+  const { stalwartFeaturesEnabled, maskedAddressDomain } = useConfig();
   const { isFeatureEnabled } = usePolicyStore();
   // A tab in the URL wins over the persisted one; without it, nothing changes.
   const [activeTab, setActiveTab] = useState<SettingsTabId>(
@@ -578,6 +581,7 @@ export function SettingsApp({ linkSegments: routeSegments }: SettingsAppProps = 
     // Privacy & Security
     ...(stalwartFeaturesEnabled ? [{ id: 'security' as Tab, label: t('tabs.security'), icon: tabIcons.security, group: 'privacy' as TabGroup }] : []),
     { id: 'content_senders', label: t('tabs.content_senders'), icon: tabIcons.content_senders, group: 'privacy' },
+    ...(maskedAddressDomain ? [{ id: 'masked_addresses' as Tab, label: t('tabs.masked_addresses'), icon: tabIcons.masked_addresses, group: 'privacy' as TabGroup }] : []),
 
     // Apps
     ...(supportsCalendar && isFeatureEnabled('calendarEnabled') ? [{ id: 'calendar' as Tab, label: t('tabs.calendar'), icon: tabIcons.calendar, group: 'apps' as TabGroup }] : []),
@@ -721,6 +725,7 @@ export function SettingsApp({ linkSegments: routeSegments }: SettingsAppProps = 
       {effectiveActiveTab === 'keywords' && <KeywordSettings />}
       {effectiveActiveTab === 'security' && <AccountSecuritySettings />}
       {effectiveActiveTab === 'content_senders' && <ContentSendersSettings />}
+      {effectiveActiveTab === 'masked_addresses' && <MaskedAddressSettings />}
       {effectiveActiveTab === 'calendar' && (
         managedAccountId
           ? <CalendarManagementSettings />

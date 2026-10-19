@@ -1026,6 +1026,7 @@
       "composing": "Composing",
       "downloads": "Downloads",
       "content_senders": "Content & Senders",
+      "masked_addresses": "Masked addresses",
       "about_data": "About & Data",
       "debug": "Debug"
     },
@@ -1918,6 +1919,42 @@
         "link_another": "Link another device",
         "use_sso": "Use single sign-on instead",
         "error_insecure_server": "The mobile app only connects to mail servers over https, and this one uses http."
+      }
+    },
+    "masked_addresses": {
+      "title": "Masked addresses",
+      "description": "Give out addresses on {domain} instead of your real one. Mail to them lands in your inbox, and you can turn one off once it gets spam.",
+      "description_generic": "Give out throwaway addresses instead of your real one. Mail to them lands in your inbox, and you can turn one off once it gets spam.",
+      "label_placeholder": "What is it for? (e.g. Netflix)",
+      "label_aria": "What the masked address is for",
+      "create": "New masked address",
+      "loading": "Loading masked addresses…",
+      "load_failed": "Could not load your masked addresses.",
+      "retry": "Retry",
+      "empty": "No masked addresses yet. Make one for the next site you sign up to.",
+      "count": "{count} of {limit}",
+      "copy": "Copy {email}",
+      "copy_failed": "Could not copy to the clipboard",
+      "no_label": "No label",
+      "edit_label": "Edit label",
+      "save": "Save",
+      "send_from": "Send from it",
+      "send_from_hint": "Add it as a sending identity, without your name, to reply from it",
+      "identity_created": "You can now send from {email}",
+      "identity_failed": "Could not add the sending identity: {error}",
+      "enable": "Turn on {email}",
+      "disable": "Turn off {email}",
+      "delete": "Delete",
+      "delete_aria": "Delete {email}",
+      "delete_title": "Delete masked address?",
+      "delete_message": "Mail to {email} will be refused from now on. The address is never given out again, so this can't be undone.",
+      "footnote": "Turned-off and deleted addresses refuse mail, so the sender gets a bounce.",
+      "errors": {
+        "limit_reached": "You have reached the limit of {limit} masked addresses. Delete some you no longer use.",
+        "session_expired": "Your session expired. Reload the page and try again.",
+        "account_not_found": "Your account was not found on the mail server.",
+        "no_free_address": "Could not find a free address. Try again.",
+        "generic": "Something went wrong. Try again."
       }
     },
     "identities": {

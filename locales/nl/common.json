@@ -1023,6 +1023,7 @@
       "composing": "Opstellen",
       "downloads": "Downloads",
       "content_senders": "Inhoud en afzenders",
+      "masked_addresses": "Gemaskeerde adressen",
       "about_data": "Over en gegevens",
       "debug": "Debuggen"
     },
@@ -1911,6 +1912,42 @@
         "key_label": "Openbare sleutel (S/MIME of PGP in ASCII-formaat)",
         "key_placeholder": "Plak hier uw openbare sleutel",
         "none": "Geen openbare sleutels geconfigureerd"
+      }
+    },
+    "masked_addresses": {
+      "title": "Gemaskeerde adressen",
+      "description": "Geef adressen op {domain} in plaats van je echte adres. Mail naar die adressen komt in je inbox, en je zet er een uit zodra er spam op binnenkomt.",
+      "description_generic": "Geef wegwerpadressen in plaats van je echte adres. Mail naar die adressen komt in je inbox, en je zet er een uit zodra er spam op binnenkomt.",
+      "label_placeholder": "Waarvoor is het? (bijv. Netflix)",
+      "label_aria": "Waarvoor het gemaskeerde adres is",
+      "create": "Nieuw gemaskeerd adres",
+      "loading": "Gemaskeerde adressen laden…",
+      "load_failed": "Je gemaskeerde adressen konden niet worden geladen.",
+      "retry": "Opnieuw proberen",
+      "empty": "Nog geen gemaskeerde adressen. Maak er een voor de volgende site waar je je aanmeldt.",
+      "count": "{count} van {limit}",
+      "copy": "{email} kopiëren",
+      "copy_failed": "Kopiëren naar het klembord mislukt",
+      "no_label": "Geen label",
+      "edit_label": "Label bewerken",
+      "save": "Opslaan",
+      "send_from": "Hiervan verzenden",
+      "send_from_hint": "Voeg het toe als afzenderidentiteit, zonder je naam, om ervan te antwoorden",
+      "identity_created": "Je kunt nu verzenden vanaf {email}",
+      "identity_failed": "Afzenderidentiteit kon niet worden toegevoegd: {error}",
+      "enable": "{email} aanzetten",
+      "disable": "{email} uitzetten",
+      "delete": "Verwijderen",
+      "delete_aria": "{email} verwijderen",
+      "delete_title": "Gemaskeerd adres verwijderen?",
+      "delete_message": "Mail naar {email} wordt vanaf nu geweigerd. Het adres wordt nooit opnieuw uitgegeven, dus dit kan niet ongedaan worden gemaakt.",
+      "footnote": "Uitgezette en verwijderde adressen weigeren mail, dus de afzender krijgt een foutmelding terug.",
+      "errors": {
+        "limit_reached": "Je hebt de limiet van {limit} gemaskeerde adressen bereikt. Verwijder adressen die je niet meer gebruikt.",
+        "session_expired": "Je sessie is verlopen. Herlaad de pagina en probeer het opnieuw.",
+        "account_not_found": "Je account is niet gevonden op de mailserver.",
+        "no_free_address": "Geen vrij adres gevonden. Probeer het opnieuw.",
+        "generic": "Er ging iets mis. Probeer het opnieuw."
       }
     },
     "identities": {

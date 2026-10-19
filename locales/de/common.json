@@ -1023,6 +1023,7 @@
       "composing": "Verfassen",
       "downloads": "Downloads",
       "content_senders": "Inhalte & Absender",
+      "masked_addresses": "Maskierte Adressen",
       "about_data": "Über & Daten",
       "debug": "Debug"
     },
@@ -1911,6 +1912,42 @@
         "key_label": "Öffentlicher Schlüssel (S/MIME oder PGP im ASCII-Format)",
         "key_placeholder": "Fügen Sie hier Ihren öffentlichen Schlüssel ein",
         "none": "Keine öffentlichen Schlüssel konfiguriert"
+      }
+    },
+    "masked_addresses": {
+      "title": "Maskierte Adressen",
+      "description": "Gib Adressen auf {domain} statt deiner echten Adresse heraus. E-Mails an sie landen in deinem Posteingang, und du kannst eine abschalten, sobald Spam kommt.",
+      "description_generic": "Gib Wegwerfadressen statt deiner echten Adresse heraus. E-Mails an sie landen in deinem Posteingang, und du kannst eine abschalten, sobald Spam kommt.",
+      "label_placeholder": "Wofür ist sie? (z. B. Netflix)",
+      "label_aria": "Wofür die maskierte Adresse ist",
+      "create": "Neue maskierte Adresse",
+      "loading": "Maskierte Adressen werden geladen…",
+      "load_failed": "Deine maskierten Adressen konnten nicht geladen werden.",
+      "retry": "Erneut versuchen",
+      "empty": "Noch keine maskierten Adressen. Erstelle eine für die nächste Seite, bei der du dich anmeldest.",
+      "count": "{count} von {limit}",
+      "copy": "{email} kopieren",
+      "copy_failed": "Kopieren in die Zwischenablage fehlgeschlagen",
+      "no_label": "Keine Beschriftung",
+      "edit_label": "Beschriftung bearbeiten",
+      "save": "Speichern",
+      "send_from": "Davon senden",
+      "send_from_hint": "Als Absenderidentität ohne deinen Namen hinzufügen, um davon zu antworten",
+      "identity_created": "Du kannst jetzt von {email} senden",
+      "identity_failed": "Absenderidentität konnte nicht hinzugefügt werden: {error}",
+      "enable": "{email} einschalten",
+      "disable": "{email} ausschalten",
+      "delete": "Löschen",
+      "delete_aria": "{email} löschen",
+      "delete_title": "Maskierte Adresse löschen?",
+      "delete_message": "E-Mails an {email} werden ab jetzt abgewiesen. Die Adresse wird nie wieder vergeben, das lässt sich also nicht rückgängig machen.",
+      "footnote": "Ausgeschaltete und gelöschte Adressen weisen E-Mails ab, der Absender erhält eine Unzustellbarkeitsmeldung.",
+      "errors": {
+        "limit_reached": "Du hast das Limit von {limit} maskierten Adressen erreicht. Lösche welche, die du nicht mehr nutzt.",
+        "session_expired": "Deine Sitzung ist abgelaufen. Lade die Seite neu und versuche es erneut.",
+        "account_not_found": "Dein Konto wurde auf dem Mailserver nicht gefunden.",
+        "no_free_address": "Keine freie Adresse gefunden. Versuche es erneut.",
+        "generic": "Etwas ist schiefgelaufen. Versuche es erneut."
       }
     },
     "identities": {

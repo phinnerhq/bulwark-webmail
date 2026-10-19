@@ -1026,6 +1026,7 @@
       "composing": "撰寫",
       "downloads": "下載",
       "content_senders": "內容與寄件者",
+      "masked_addresses": "隱藏地址",
       "about_data": "關於與資料",
       "debug": "除錯"
     },
@@ -1918,6 +1919,42 @@
         "link_another": "連結其他裝置",
         "use_sso": "改用單一登入",
         "error_insecure_server": "行動應用程式只透過 https 連線到郵件伺服器，而此伺服器使用的是 http。"
+      }
+    },
+    "masked_addresses": {
+      "title": "隱藏地址",
+      "description": "用 {domain} 上的地址代替你的真實地址。寄往這些地址的郵件會進入你的收件匣，一旦收到垃圾郵件就可以關閉該地址。",
+      "description_generic": "用一次性地址代替你的真實地址。寄往這些地址的郵件會進入你的收件匣，一旦收到垃圾郵件就可以關閉該地址。",
+      "label_placeholder": "用途是什麼？（例如 Netflix）",
+      "label_aria": "隱藏地址的用途",
+      "create": "新增隱藏地址",
+      "loading": "正在載入隱藏地址…",
+      "load_failed": "無法載入你的隱藏地址。",
+      "retry": "重試",
+      "empty": "還沒有隱藏地址。為下一個註冊的網站建立一個吧。",
+      "count": "{count} / {limit}",
+      "copy": "複製 {email}",
+      "copy_failed": "無法複製到剪貼簿",
+      "no_label": "無標籤",
+      "edit_label": "編輯標籤",
+      "save": "儲存",
+      "send_from": "用它寄送",
+      "send_from_hint": "將其新增為不含你姓名的寄件人身分，以便用它回覆",
+      "identity_created": "現在可以從 {email} 寄送郵件",
+      "identity_failed": "無法新增寄件人身分：{error}",
+      "enable": "開啟 {email}",
+      "disable": "關閉 {email}",
+      "delete": "刪除",
+      "delete_aria": "刪除 {email}",
+      "delete_title": "刪除隱藏地址？",
+      "delete_message": "從現在起，寄往 {email} 的郵件將被拒收。該地址永遠不會再分配給他人，因此無法復原。",
+      "footnote": "已關閉和已刪除的地址會拒收郵件，寄件人會收到退信通知。",
+      "errors": {
+        "limit_reached": "你已達到 {limit} 個隱藏地址的上限。請刪除不再使用的地址。",
+        "session_expired": "工作階段已過期。請重新整理頁面後再試一次。",
+        "account_not_found": "在郵件伺服器上找不到你的帳號。",
+        "no_free_address": "找不到可用的地址。請再試一次。",
+        "generic": "發生問題。請再試一次。"
       }
     },
     "identities": {

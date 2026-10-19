@@ -19,6 +19,7 @@ export type SettingsSearchTab =
   | 'keywords'
   | 'security'
   | 'content_senders'
+  | 'masked_addresses'
   | 'calendar'
   | 'contacts'
   | 'files'
@@ -119,6 +120,7 @@ export const tabSearchPaths: Record<Tab, string[]> = {
   folders: ['settings.folders'],
   keywords: ['settings.keywords'],
   security: ['settings.security'],
+  masked_addresses: ['settings.masked_addresses'],
   content_senders: [
     'settings.email_behavior.always_light_mode',
     'settings.email_behavior.external_content',
@@ -154,6 +156,7 @@ export const tabKeywords: Record<Tab, string> = {
   keywords: 'tags labels colors',
   security: 'password 2fa two-factor passkey app password mfa',
   content_senders: 'block sender remote images privacy tracking',
+  masked_addresses: 'mask alias anonymous burner disposable hide email sign up privacy',
   calendar: 'event schedule appointment meeting timezone',
   contacts: 'address book contact',
   files: 'attachments cloud drive storage upload',

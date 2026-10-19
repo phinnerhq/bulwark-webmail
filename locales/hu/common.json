@@ -1026,6 +1026,7 @@
       "composing": "Írás",
       "downloads": "Letöltések",
       "content_senders": "Tartalom és feladók",
+      "masked_addresses": "Maszkolt címek",
       "about_data": "Névjegy és adatok",
       "debug": "Hibakeresés"
     },
@@ -1914,6 +1915,42 @@
         "key_label": "Nyilvános kulcs (S/MIME vagy PGP ASCII formátumban)",
         "key_placeholder": "Illessze be ide a nyilvános kulcsát",
         "none": "Nincs beállítva nyilvános kulcs"
+      }
+    },
+    "masked_addresses": {
+      "title": "Maszkolt címek",
+      "description": "A valódi címed helyett {domain} címeket adj meg. A rájuk küldött levelek a postafiókodba érkeznek, és bármelyiket kikapcsolhatod, ha spam érkezik rá.",
+      "description_generic": "A valódi címed helyett eldobható címeket adj meg. A rájuk küldött levelek a postafiókodba érkeznek, és bármelyiket kikapcsolhatod, ha spam érkezik rá.",
+      "label_placeholder": "Mire való? (pl. Netflix)",
+      "label_aria": "Mire való a maszkolt cím",
+      "create": "Új maszkolt cím",
+      "loading": "Maszkolt címek betöltése…",
+      "load_failed": "Nem sikerült betölteni a maszkolt címeidet.",
+      "retry": "Újra",
+      "empty": "Még nincs maszkolt címed. Készíts egyet a következő oldalhoz, ahol regisztrálsz.",
+      "count": "{count} / {limit}",
+      "copy": "{email} másolása",
+      "copy_failed": "Nem sikerült a vágólapra másolni",
+      "no_label": "Nincs címke",
+      "edit_label": "Címke szerkesztése",
+      "save": "Mentés",
+      "send_from": "Küldés erről",
+      "send_from_hint": "Hozzáadás küldési identitásként a neved nélkül, hogy erről válaszolhass",
+      "identity_created": "Mostantól küldhetsz erről: {email}",
+      "identity_failed": "Nem sikerült hozzáadni a küldési identitást: {error}",
+      "enable": "{email} bekapcsolása",
+      "disable": "{email} kikapcsolása",
+      "delete": "Törlés",
+      "delete_aria": "{email} törlése",
+      "delete_title": "Törlöd a maszkolt címet?",
+      "delete_message": "A(z) {email} címre érkező leveleket mostantól elutasítjuk. A címet soha többé nem adjuk ki, ezért ez nem vonható vissza.",
+      "footnote": "A kikapcsolt és törölt címek elutasítják a leveleket, így a feladó visszapattanó értesítést kap.",
+      "errors": {
+        "limit_reached": "Elérted a(z) {limit} maszkolt cím korlátját. Töröld azokat, amelyeket már nem használsz.",
+        "session_expired": "A munkameneted lejárt. Töltsd újra az oldalt, és próbáld újra.",
+        "account_not_found": "A fiókod nem található a levelezőszerveren.",
+        "no_free_address": "Nem található szabad cím. Próbáld újra.",
+        "generic": "Hiba történt. Próbáld újra."
       }
     },
     "identities": {

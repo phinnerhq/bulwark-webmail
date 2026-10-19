@@ -1023,6 +1023,7 @@
       "composing": "Redacción",
       "downloads": "Descargas",
       "content_senders": "Contenido y remitentes",
+      "masked_addresses": "Direcciones enmascaradas",
       "about_data": "Acerca de y datos",
       "debug": "Depuración"
     },
@@ -1911,6 +1912,42 @@
         "key_label": "Clave pública (S/MIME o PGP en formato ASCII)",
         "key_placeholder": "Pega aquí tu clave pública",
         "none": "No hay claves públicas configuradas"
+      }
+    },
+    "masked_addresses": {
+      "title": "Direcciones enmascaradas",
+      "description": "Da direcciones en {domain} en lugar de la tuya. El correo que reciben llega a tu bandeja, y puedes desactivar una en cuanto reciba spam.",
+      "description_generic": "Da direcciones desechables en lugar de la tuya. El correo que reciben llega a tu bandeja, y puedes desactivar una en cuanto reciba spam.",
+      "label_placeholder": "¿Para qué es? (p. ej. Netflix)",
+      "label_aria": "Para qué es la dirección enmascarada",
+      "create": "Nueva dirección enmascarada",
+      "loading": "Cargando direcciones enmascaradas…",
+      "load_failed": "No se pudieron cargar tus direcciones enmascaradas.",
+      "retry": "Reintentar",
+      "empty": "Aún no tienes direcciones enmascaradas. Crea una para el próximo sitio donde te registres.",
+      "count": "{count} de {limit}",
+      "copy": "Copiar {email}",
+      "copy_failed": "No se pudo copiar al portapapeles",
+      "no_label": "Sin etiqueta",
+      "edit_label": "Editar etiqueta",
+      "save": "Guardar",
+      "send_from": "Enviar desde ella",
+      "send_from_hint": "Añadirla como identidad de envío, sin tu nombre, para responder desde ella",
+      "identity_created": "Ya puedes enviar desde {email}",
+      "identity_failed": "No se pudo añadir la identidad de envío: {error}",
+      "enable": "Activar {email}",
+      "disable": "Desactivar {email}",
+      "delete": "Eliminar",
+      "delete_aria": "Eliminar {email}",
+      "delete_title": "¿Eliminar la dirección enmascarada?",
+      "delete_message": "El correo a {email} se rechazará a partir de ahora. La dirección no se volverá a asignar, así que no se puede deshacer.",
+      "footnote": "Las direcciones desactivadas o eliminadas rechazan el correo, así que el remitente recibe un aviso de rebote.",
+      "errors": {
+        "limit_reached": "Has alcanzado el límite de {limit} direcciones enmascaradas. Elimina las que ya no uses.",
+        "session_expired": "Tu sesión ha caducado. Recarga la página e inténtalo de nuevo.",
+        "account_not_found": "No se encontró tu cuenta en el servidor de correo.",
+        "no_free_address": "No se encontró ninguna dirección libre. Inténtalo de nuevo.",
+        "generic": "Algo salió mal. Inténtalo de nuevo."
       }
     },
     "identities": {

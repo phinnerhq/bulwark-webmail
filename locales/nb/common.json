@@ -1026,6 +1026,7 @@
       "composing": "Skriving",
       "downloads": "Nedlastinger",
       "content_senders": "Innhold og avsendere",
+      "masked_addresses": "Maskerte adresser",
       "about_data": "Om programmet og data",
       "debug": "Feilsøking"
     },
@@ -1918,6 +1919,42 @@
         "link_another": "Koble til en annen enhet",
         "use_sso": "Bruk enkel pålogging i stedet",
         "error_insecure_server": "Mobilappen kobler bare til e-postservere over https, og denne bruker http."
+      }
+    },
+    "masked_addresses": {
+      "title": "Maskerte adresser",
+      "description": "Gi ut adresser på {domain} i stedet for din ekte adresse. E-post til dem havner i innboksen din, og du kan slå av en så snart den får søppelpost.",
+      "description_generic": "Gi ut engangsadresser i stedet for din ekte adresse. E-post til dem havner i innboksen din, og du kan slå av en så snart den får søppelpost.",
+      "label_placeholder": "Hva er den til? (f.eks. Netflix)",
+      "label_aria": "Hva den maskerte adressen er til",
+      "create": "Ny maskert adresse",
+      "loading": "Laster inn maskerte adresser…",
+      "load_failed": "Kunne ikke laste inn de maskerte adressene dine.",
+      "retry": "Prøv igjen",
+      "empty": "Ingen maskerte adresser ennå. Lag en til neste nettsted du registrerer deg på.",
+      "count": "{count} av {limit}",
+      "copy": "Kopier {email}",
+      "copy_failed": "Kunne ikke kopiere til utklippstavlen",
+      "no_label": "Ingen etikett",
+      "edit_label": "Rediger etikett",
+      "save": "Lagre",
+      "send_from": "Send fra den",
+      "send_from_hint": "Legg den til som avsenderidentitet uten navnet ditt for å svare fra den",
+      "identity_created": "Du kan nå sende fra {email}",
+      "identity_failed": "Kunne ikke legge til avsenderidentiteten: {error}",
+      "enable": "Slå på {email}",
+      "disable": "Slå av {email}",
+      "delete": "Slett",
+      "delete_aria": "Slett {email}",
+      "delete_title": "Slette maskert adresse?",
+      "delete_message": "E-post til {email} avvises fra nå av. Adressen deles aldri ut igjen, så dette kan ikke angres.",
+      "footnote": "Avslåtte og slettede adresser avviser e-post, så avsenderen får en returmelding.",
+      "errors": {
+        "limit_reached": "Du har nådd grensen på {limit} maskerte adresser. Slett noen du ikke lenger bruker.",
+        "session_expired": "Økten din er utløpt. Last inn siden på nytt og prøv igjen.",
+        "account_not_found": "Kontoen din ble ikke funnet på e-postserveren.",
+        "no_free_address": "Fant ingen ledig adresse. Prøv igjen.",
+        "generic": "Noe gikk galt. Prøv igjen."
       }
     },
     "identities": {

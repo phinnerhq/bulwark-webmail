@@ -1026,6 +1026,7 @@
       "composing": "Redactarea",
       "downloads": "Descărcări",
       "content_senders": "Conținut și expeditori",
+      "masked_addresses": "Adrese mascate",
       "about_data": "Despre & Date",
       "debug": "Depanare"
     },
@@ -1918,6 +1919,42 @@
         "key_label": "Cheie publică (S/MIME sau PGP în format ASCII)",
         "key_placeholder": "Lipiți aici cheia dvs. publică",
         "none": "Nicio cheie publică configurată"
+      }
+    },
+    "masked_addresses": {
+      "title": "Adrese mascate",
+      "description": "Oferă adrese pe {domain} în locul adresei tale reale. E-mailurile trimise către ele ajung în căsuța ta, iar poți dezactiva una de îndată ce primește spam.",
+      "description_generic": "Oferă adrese de unică folosință în locul adresei tale reale. E-mailurile trimise către ele ajung în căsuța ta, iar poți dezactiva una de îndată ce primește spam.",
+      "label_placeholder": "Pentru ce este? (de ex. Netflix)",
+      "label_aria": "Pentru ce este adresa mascată",
+      "create": "Adresă mascată nouă",
+      "loading": "Se încarcă adresele mascate…",
+      "load_failed": "Adresele mascate nu au putut fi încărcate.",
+      "retry": "Reîncearcă",
+      "empty": "Nu ai încă adrese mascate. Creează una pentru următorul site la care te înscrii.",
+      "count": "{count} din {limit}",
+      "copy": "Copiază {email}",
+      "copy_failed": "Nu s-a putut copia în clipboard",
+      "no_label": "Fără etichetă",
+      "edit_label": "Editează eticheta",
+      "save": "Salvează",
+      "send_from": "Trimite de pe ea",
+      "send_from_hint": "Adaug-o ca identitate de trimitere, fără numele tău, pentru a răspunde de pe ea",
+      "identity_created": "Acum poți trimite de pe {email}",
+      "identity_failed": "Identitatea de trimitere nu a putut fi adăugată: {error}",
+      "enable": "Activează {email}",
+      "disable": "Dezactivează {email}",
+      "delete": "Șterge",
+      "delete_aria": "Șterge {email}",
+      "delete_title": "Ștergi adresa mascată?",
+      "delete_message": "E-mailurile către {email} vor fi refuzate de acum. Adresa nu va mai fi atribuită niciodată, așa că acțiunea nu poate fi anulată.",
+      "footnote": "Adresele dezactivate și șterse refuză e-mailurile, așa că expeditorul primește un mesaj de nelivrare.",
+      "errors": {
+        "limit_reached": "Ai atins limita de {limit} adrese mascate. Șterge-le pe cele pe care nu le mai folosești.",
+        "session_expired": "Sesiunea a expirat. Reîncarcă pagina și încearcă din nou.",
+        "account_not_found": "Contul tău nu a fost găsit pe serverul de e-mail.",
+        "no_free_address": "Nu s-a găsit nicio adresă liberă. Încearcă din nou.",
+        "generic": "Ceva nu a funcționat. Încearcă din nou."
       }
     },
     "identities": {

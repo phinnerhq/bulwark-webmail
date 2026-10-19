@@ -1023,6 +1023,7 @@
       "composing": "撰写",
       "downloads": "下载",
       "content_senders": "内容和发件人",
+      "masked_addresses": "隐藏地址",
       "about_data": "关于和数据",
       "debug": "调试"
     },
@@ -1911,6 +1912,42 @@
         "key_label": "公钥（S/MIME 或 PGP ASCII 格式）",
         "key_placeholder": "在此粘贴您的公钥",
         "none": "未配置公钥"
+      }
+    },
+    "masked_addresses": {
+      "title": "隐藏地址",
+      "description": "用 {domain} 上的地址代替你的真实地址。发往这些地址的邮件会进入你的收件箱，一旦收到垃圾邮件就可以关闭该地址。",
+      "description_generic": "用一次性地址代替你的真实地址。发往这些地址的邮件会进入你的收件箱，一旦收到垃圾邮件就可以关闭该地址。",
+      "label_placeholder": "用途是什么？（例如 Netflix）",
+      "label_aria": "隐藏地址的用途",
+      "create": "新建隐藏地址",
+      "loading": "正在加载隐藏地址…",
+      "load_failed": "无法加载你的隐藏地址。",
+      "retry": "重试",
+      "empty": "还没有隐藏地址。为下一个注册的网站创建一个吧。",
+      "count": "{count} / {limit}",
+      "copy": "复制 {email}",
+      "copy_failed": "无法复制到剪贴板",
+      "no_label": "无标签",
+      "edit_label": "编辑标签",
+      "save": "保存",
+      "send_from": "用它发送",
+      "send_from_hint": "将其添加为不含你姓名的发件人身份，以便用它回复",
+      "identity_created": "现在可以从 {email} 发送邮件",
+      "identity_failed": "无法添加发件人身份：{error}",
+      "enable": "开启 {email}",
+      "disable": "关闭 {email}",
+      "delete": "删除",
+      "delete_aria": "删除 {email}",
+      "delete_title": "删除隐藏地址？",
+      "delete_message": "从现在起，发往 {email} 的邮件将被拒收。该地址永远不会再分配给他人，因此无法撤销。",
+      "footnote": "已关闭和已删除的地址会拒收邮件，发件人会收到退信通知。",
+      "errors": {
+        "limit_reached": "你已达到 {limit} 个隐藏地址的上限。请删除不再使用的地址。",
+        "session_expired": "会话已过期。请刷新页面后重试。",
+        "account_not_found": "在邮件服务器上找不到你的账户。",
+        "no_free_address": "找不到可用的地址。请重试。",
+        "generic": "出现问题。请重试。"
       }
     },
     "identities": {

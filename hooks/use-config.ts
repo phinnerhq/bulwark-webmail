@@ -46,6 +46,8 @@ export interface ConfigData {
   embeddedMode: boolean;
   parentOrigin: string;
   sourceCodeUrl: string;
+  /** Domain of masked addresses, or '' when they are not offered. */
+  maskedAddressDomain: string;
 }
 
 interface AppConfig extends ConfigData {
@@ -181,6 +183,7 @@ export function useConfig(): AppConfig {
     embeddedMode: configCache?.embeddedMode || false,
     parentOrigin: configCache?.parentOrigin || '',
     sourceCodeUrl: configCache?.sourceCodeUrl || '',
+    maskedAddressDomain: configCache?.maskedAddressDomain || '',
     isLoading: !configCache,
     error: null,
   });
@@ -226,6 +229,7 @@ export function useConfig(): AppConfig {
         embeddedMode: configCache.embeddedMode,
         parentOrigin: configCache.parentOrigin,
         sourceCodeUrl: configCache.sourceCodeUrl,
+        maskedAddressDomain: configCache.maskedAddressDomain,
         isLoading: false,
         error: null,
       });
@@ -272,6 +276,7 @@ export function useConfig(): AppConfig {
           embeddedMode: data.embeddedMode,
           parentOrigin: data.parentOrigin,
           sourceCodeUrl: data.sourceCodeUrl,
+          maskedAddressDomain: data.maskedAddressDomain,
           isLoading: false,
           error: null,
         });

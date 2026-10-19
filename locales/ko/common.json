@@ -1023,6 +1023,7 @@
       "composing": "작성",
       "downloads": "다운로드",
       "content_senders": "콘텐츠 및 발신자",
+      "masked_addresses": "마스킹 주소",
       "about_data": "정보 및 데이터",
       "debug": "디버그"
     },
@@ -1911,6 +1912,42 @@
         "key_label": "공개 키(S/MIME 또는 PGP ASCII 형식)",
         "key_placeholder": "여기에 공개 키를 붙여넣으세요",
         "none": "설정된 공개 키가 없어요"
+      }
+    },
+    "masked_addresses": {
+      "title": "마스킹 주소",
+      "description": "실제 주소 대신 {domain} 주소를 알려 주세요. 이 주소로 온 메일은 받은편지함에 도착하며, 스팸이 오기 시작하면 해당 주소를 끌 수 있습니다.",
+      "description_generic": "실제 주소 대신 일회용 주소를 알려 주세요. 이 주소로 온 메일은 받은편지함에 도착하며, 스팸이 오기 시작하면 해당 주소를 끌 수 있습니다.",
+      "label_placeholder": "어디에 쓰나요? (예: Netflix)",
+      "label_aria": "마스킹 주소의 용도",
+      "create": "새 마스킹 주소",
+      "loading": "마스킹 주소를 불러오는 중…",
+      "load_failed": "마스킹 주소를 불러오지 못했습니다.",
+      "retry": "다시 시도",
+      "empty": "아직 마스킹 주소가 없습니다. 다음에 가입할 사이트용으로 하나 만드세요.",
+      "count": "{count} / {limit}",
+      "copy": "{email} 복사",
+      "copy_failed": "클립보드에 복사하지 못했습니다",
+      "no_label": "라벨 없음",
+      "edit_label": "라벨 편집",
+      "save": "저장",
+      "send_from": "이 주소로 보내기",
+      "send_from_hint": "이 주소로 답장할 수 있도록 이름 없이 보내는 사람 ID로 추가합니다",
+      "identity_created": "이제 {email}에서 보낼 수 있습니다",
+      "identity_failed": "보내는 사람 ID를 추가하지 못했습니다: {error}",
+      "enable": "{email} 켜기",
+      "disable": "{email} 끄기",
+      "delete": "삭제",
+      "delete_aria": "{email} 삭제",
+      "delete_title": "마스킹 주소를 삭제할까요?",
+      "delete_message": "이제부터 {email}(으)로 오는 메일은 거부됩니다. 이 주소는 다시 할당되지 않으므로 되돌릴 수 없습니다.",
+      "footnote": "꺼지거나 삭제된 주소는 메일을 거부하므로 보낸 사람은 반송 알림을 받습니다.",
+      "errors": {
+        "limit_reached": "마스킹 주소 한도({limit}개)에 도달했습니다. 더 이상 쓰지 않는 주소를 삭제하세요.",
+        "session_expired": "세션이 만료되었습니다. 페이지를 새로 고친 후 다시 시도하세요.",
+        "account_not_found": "메일 서버에서 계정을 찾을 수 없습니다.",
+        "no_free_address": "사용 가능한 주소를 찾지 못했습니다. 다시 시도하세요.",
+        "generic": "문제가 발생했습니다. 다시 시도하세요."
       }
     },
     "identities": {

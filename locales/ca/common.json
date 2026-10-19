@@ -1026,6 +1026,7 @@
       "composing": "Redacció",
       "downloads": "Baixades",
       "content_senders": "Contingut i remitents",
+      "masked_addresses": "Adreces emmascarades",
       "about_data": "Quant a i dades",
       "debug": "Depuració"
     },
@@ -1918,6 +1919,42 @@
         "key_label": "Clau pública (S/MIME o PGP en ASCII armor)",
         "key_placeholder": "Enganxeu aquí la vostra clau pública",
         "none": "No hi ha cap clau pública configurada"
+      }
+    },
+    "masked_addresses": {
+      "title": "Adreces emmascarades",
+      "description": "Dona adreces a {domain} en lloc de la teva. El correu que reben arriba a la teva safata, i en pots desactivar una tan bon punt rebi correu brossa.",
+      "description_generic": "Dona adreces d'un sol ús en lloc de la teva. El correu que reben arriba a la teva safata, i en pots desactivar una tan bon punt rebi correu brossa.",
+      "label_placeholder": "Per a què és? (p. ex. Netflix)",
+      "label_aria": "Per a què és l'adreça emmascarada",
+      "create": "Nova adreça emmascarada",
+      "loading": "S'estan carregant les adreces emmascarades…",
+      "load_failed": "No s'han pogut carregar les teves adreces emmascarades.",
+      "retry": "Torna-ho a provar",
+      "empty": "Encara no tens adreces emmascarades. Crea'n una per al proper lloc on et registris.",
+      "count": "{count} de {limit}",
+      "copy": "Copia {email}",
+      "copy_failed": "No s'ha pogut copiar al porta-retalls",
+      "no_label": "Sense etiqueta",
+      "edit_label": "Edita l'etiqueta",
+      "save": "Desa",
+      "send_from": "Envia des d'aquesta",
+      "send_from_hint": "Afegeix-la com a identitat d'enviament, sense el teu nom, per respondre des d'aquesta adreça",
+      "identity_created": "Ja pots enviar des de {email}",
+      "identity_failed": "No s'ha pogut afegir la identitat d'enviament: {error}",
+      "enable": "Activa {email}",
+      "disable": "Desactiva {email}",
+      "delete": "Suprimeix",
+      "delete_aria": "Suprimeix {email}",
+      "delete_title": "Vols suprimir l'adreça emmascarada?",
+      "delete_message": "El correu a {email} es rebutjarà a partir d'ara. L'adreça no es tornarà a assignar mai, així que no es pot desfer.",
+      "footnote": "Les adreces desactivades o suprimides rebutgen el correu, de manera que el remitent rep un avís de rebot.",
+      "errors": {
+        "limit_reached": "Has arribat al límit de {limit} adreces emmascarades. Suprimeix les que ja no facis servir.",
+        "session_expired": "La sessió ha caducat. Torna a carregar la pàgina i torna-ho a provar.",
+        "account_not_found": "No s'ha trobat el teu compte al servidor de correu.",
+        "no_free_address": "No s'ha trobat cap adreça lliure. Torna-ho a provar.",
+        "generic": "Alguna cosa ha anat malament. Torna-ho a provar."
       }
     },
     "identities": {

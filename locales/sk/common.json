@@ -1026,6 +1026,7 @@
       "composing": "Pisanie",
       "downloads": "Stiahnuté",
       "content_senders": "Obsah a odosielatelia",
+      "masked_addresses": "Maskované adresy",
       "about_data": "Info a dáta",
       "debug": "Ladenie"
     },
@@ -1918,6 +1919,42 @@
         "key_label": "Verejný kľúč (S/MIME alebo PGP vo formáte ASCII)",
         "key_placeholder": "Sem vložte svoj verejný kľúč",
         "none": "Nie sú nastavené žiadne verejné kľúče"
+      }
+    },
+    "masked_addresses": {
+      "title": "Maskované adresy",
+      "description": "Rozdávajte adresy na {domain} namiesto svojej skutočnej. Pošta na ne príde do vašej schránky a keď začne chodiť spam, adresu môžete vypnúť.",
+      "description_generic": "Rozdávajte jednorazové adresy namiesto svojej skutočnej. Pošta na ne príde do vašej schránky a keď začne chodiť spam, adresu môžete vypnúť.",
+      "label_placeholder": "Na čo slúži? (napr. Netflix)",
+      "label_aria": "Na čo maskovaná adresa slúži",
+      "create": "Nová maskovaná adresa",
+      "loading": "Načítavajú sa maskované adresy…",
+      "load_failed": "Maskované adresy sa nepodarilo načítať.",
+      "retry": "Skúsiť znova",
+      "empty": "Zatiaľ nemáte žiadne maskované adresy. Vytvorte si jednu pre ďalší web, kde sa registrujete.",
+      "count": "{count} z {limit}",
+      "copy": "Kopírovať {email}",
+      "copy_failed": "Kopírovanie do schránky zlyhalo",
+      "no_label": "Bez označenia",
+      "edit_label": "Upraviť označenie",
+      "save": "Uložiť",
+      "send_from": "Odosielať z nej",
+      "send_from_hint": "Pridať ako identitu odosielateľa bez vášho mena, aby ste z nej mohli odpovedať",
+      "identity_created": "Teraz môžete odosielať z {email}",
+      "identity_failed": "Identitu odosielateľa sa nepodarilo pridať: {error}",
+      "enable": "Zapnúť {email}",
+      "disable": "Vypnúť {email}",
+      "delete": "Odstrániť",
+      "delete_aria": "Odstrániť {email}",
+      "delete_title": "Odstrániť maskovanú adresu?",
+      "delete_message": "Pošta na {email} bude odteraz odmietaná. Adresa sa už nikdy nepridelí znova, takže to nemožno vrátiť.",
+      "footnote": "Vypnuté a odstránené adresy poštu odmietajú, takže odosielateľ dostane správu o nedoručení.",
+      "errors": {
+        "limit_reached": "Dosiahli ste limit {limit} maskovaných adries. Odstráňte tie, ktoré už nepoužívate.",
+        "session_expired": "Vaša relácia vypršala. Obnovte stránku a skúste to znova.",
+        "account_not_found": "Váš účet sa na poštovom serveri nenašiel.",
+        "no_free_address": "Nepodarilo sa nájsť voľnú adresu. Skúste to znova.",
+        "generic": "Niečo sa pokazilo. Skúste to znova."
       }
     },
     "identities": {

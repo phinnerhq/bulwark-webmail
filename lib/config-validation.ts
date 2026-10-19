@@ -65,6 +65,7 @@ const configValidators = {
   embeddedMode: isBoolean,
   parentOrigin: isString,
   sourceCodeUrl: isString,
+  maskedAddressDomain: isString,
 } satisfies Validators<ConfigData>;
 
 /**
