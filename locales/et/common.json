@@ -80,6 +80,8 @@
     },
     "oauth_completing": "Sisselogimise lõpetamine...",
     "oauth_error": {
+      "back_to_mail": "Tagasi meili juurde",
+      "mailbox_unavailable": "Sisse logitud, kuid meiliserveris pole selle konto jaoks postkasti.",
       "title": "Autentimine ebaõnnestus",
       "invalid_state": "Turvakontroll ebaõnnestus. Palun proovi uuesti sisse logida.",
       "missing_params": "Autoriseerimisandmed puuduvad. Palun proovi uuesti sisse logida.",

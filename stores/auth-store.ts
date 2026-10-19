@@ -1532,13 +1532,33 @@ function shouldRetryRefresh(slot: number, accountId?: string): boolean {
   return useAuthStore.getState().isAuthenticated;
 }
 
-function scheduleRefresh(expiresIn: number, refreshFn: () => Promise<string | null>, accountId?: string): void {
+/**
+ * Connects the client of a sign-in in progress, which renews nothing yet. Its
+ * token was issued a moment ago, so a refusal is final: the mail server has no
+ * mailbox for this person, as when Stalwart does not host their domain. A
+ * renewal would have fetched the active account's token and signed in as that
+ * account instead.
+ */
+async function connectSignIn(client: JMAPClient): Promise<void> {
+  try {
+    await client.connect();
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('Authentication failed')) throw new Error('mailbox_unavailable');
+    throw error;
+  }
+}
+
+function scheduleRefresh(
+  expiresIn: number,
+  refreshFn: (options?: { accountId?: string }) => Promise<string | null>,
+  accountId?: string,
+): void {
   if (accountId) {
     const existing = refreshTimers.get(accountId);
     if (existing) clearTimeout(existing);
     const refreshAt = Math.max((expiresIn - 60) * 1000, 10_000);
     refreshTimers.set(accountId, setTimeout(() => {
-      refreshFn().catch((err) => {
+      refreshFn({ accountId }).catch((err) => {
         debug.error(`Scheduled token refresh failed for ${accountId}:`, err);
       });
     }, refreshAt));
@@ -1799,8 +1819,9 @@ async function adoptProviderSession(
   const typed = session.typedUsername ? toAsciiEmail(session.typedUsername) : '';
   const accountStore = useAccountStore.getState();
   let boundAccountId: string | undefined;
-  const client = JMAPClient.withBearer(ssoServerUrl, access_token, typed, () => get().refreshAccessToken({ accountId: boundAccountId }));
-  await client.connect();
+  // Unbound until the session names the account: see loginWithOAuth.
+  const client = JMAPClient.withBearer(ssoServerUrl, access_token, typed, () => (boundAccountId ? get().refreshAccessToken({ accountId: boundAccountId }) : Promise.resolve(null)));
+  await connectSignIn(client);
 
   const jmapUsername = client.getUsername();
   const { identities, primaryIdentity } = loadIdentities(await client.getIdentities(), typed || jmapUsername);
@@ -2426,10 +2447,11 @@ export const useAuthStore = create<AuthState>()(
           const { access_token, expires_in } = await tokenRes.json();
 
           // The account id comes from the session, so the refresh hook reads
-          // it once it is known below.
+          // it once it is known below. Until then a refusal is final: renewing
+          // would fetch the active account's token and sign in as that account.
           let boundAccountId: string | undefined;
-          const client = JMAPClient.withBearer(serverUrl, access_token, '', () => get().refreshAccessToken({ accountId: boundAccountId }));
-          await client.connect();
+          const client = JMAPClient.withBearer(serverUrl, access_token, '', () => (boundAccountId ? get().refreshAccessToken({ accountId: boundAccountId }) : Promise.resolve(null)));
+          await connectSignIn(client);
 
           const jmapUsername = client.getUsername();
           const { identities, primaryIdentity } = loadIdentities(await client.getIdentities(), jmapUsername);
@@ -2679,6 +2701,8 @@ export const useAuthStore = create<AuthState>()(
         }
 
         const account = accountId ? useAccountStore.getState().getAccountById(accountId) : null;
+        // Not registered yet (still signing in): no slot of its own to renew from.
+        if (options?.accountId && !account) return null;
         const slot = account?.cookieSlot ?? 0;
         // The account is being signed out: a renewal now would only undo that.
         if (closingSlots.has(slot)) return null;
