@@ -181,8 +181,18 @@ test("masked addresses: make one, turn it off and delete it from Settings", asyn
 });
 
 test("a link naming a provider signs in there", async ({ page }) => {
+  // The list must not flash up on the way to the provider.
+  let listShown = false;
+  await page.exposeFunction("listShown", () => { listShown = true; });
+  await page.addInitScript(() => {
+    new MutationObserver(() => {
+      if (document.getElementById("idp-list-label")) (window as unknown as { listShown: () => void }).listShown();
+    }).observe(document, { childList: true, subtree: true });
+  });
+
   await page.goto("/login?server=south");
   await expectMailView(page);
+  expect(listShown).toBe(false);
 
   const events = await idpEvents(page);
   expect(events.filter((e) => e.type === "login").map((e) => e.person)).toEqual(["bob@example.com"]);
