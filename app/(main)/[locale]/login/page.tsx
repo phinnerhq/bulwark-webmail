@@ -208,7 +208,10 @@ function LoginPageContent() {
   const [jmapEndpoint, setJmapEndpoint] = useState("");
   // Back from ending the provider's session: the sign-in it was for carries on.
   const [resumeServerId] = useState(() => (typeof window === "undefined" ? null : readProviderLeft()));
-  const [selectedServerId, setSelectedServerId] = useState<string | null>(isAddAccountMode ? resumeServerId : null);
+  // A link can name the server to sign in to, as `?server=<id>`: an app that
+  // already signed its people in at that server's provider sends them here.
+  const [linkedServerId] = useState(() => searchParams.get("server"));
+  const [selectedServerId, setSelectedServerId] = useState<string | null>(isAddAccountMode ? resumeServerId : linkedServerId);
   const [domainAutoLocked, setDomainAutoLocked] = useState(false);
 
   const hasServerList = jmapServers.length > 0;
@@ -645,6 +648,24 @@ function LoginPageContent() {
       resumedAfterProviderSignOut.current = true;
       void handleOAuthLogin();
     }
+  });
+
+  // A link naming a server signs in there as its button would, once. The
+  // parameter leaves the URL first, so coming back from the provider shows the
+  // list rather than starting again.
+  const linkedSignIn = useRef(linkedServerId);
+  useEffect(() => {
+    const serverId = linkedSignIn.current;
+    if (!serverId || configLoading || !showIdpList) return;
+    linkedSignIn.current = null;
+    if (signedOutOnPurpose.current === null) signedOutOnPurpose.current = consumeSignedOut();
+    if (signedOutOnPurpose.current || ssoError || isAuthenticated || resumeServerId) return;
+    const server = jmapServers.find((s) => s.id === serverId);
+    if (!server) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("server");
+    window.history.replaceState(window.history.state, "", url);
+    void handleIdpSelect(server);
   });
 
   if (configLoading) {
