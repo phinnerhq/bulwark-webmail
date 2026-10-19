@@ -79,6 +79,8 @@
     },
     "oauth_completing": "Completing sign in...",
     "oauth_error": {
+      "back_to_mail": "Back to mail",
+      "mailbox_unavailable": "Signed in, but the mail server has no mailbox for this account.",
       "title": "Authentication Failed",
       "invalid_state": "Security validation failed. Please try signing in again.",
       "missing_params": "Missing authorization data. Please try signing in again.",
