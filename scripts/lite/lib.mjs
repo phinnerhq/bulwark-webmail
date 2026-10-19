@@ -149,6 +149,8 @@ export const LITE_API_STRING_ALLOWLIST = [
   "/api/fetch-ical",
   "/api/caldav/discover",
   "/api/webdav",
+  // Masked addresses - the Settings tab only shows with maskedAddressDomain, pinned empty in Lite.
+  "/api/account/masked-addresses",
   // Sender favicons and BIMI logos - disabled in Lite (initials fallback).
   "/api/favicon",
   "/api/bimi",
