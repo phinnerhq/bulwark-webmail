@@ -5,6 +5,7 @@ import { parseJmapServers, redactJmapServers } from '@/lib/admin/jmap-servers';
 import { hasSessionSecret } from '@/lib/auth/session-secret';
 import { getOauthScopes } from '@/lib/oauth/tokens';
 import { httpUrlOrEmpty } from '@/lib/config-validation';
+import { getMaskedAddressConfig } from '@/lib/masked-addresses/server';
 import {
   matchDomainBranding,
   parseDomainBranding,
@@ -98,6 +99,8 @@ export async function GET(request: NextRequest) {
       embeddedMode: !!allowedFrameAncestors && allowedFrameAncestors !== "'none'",
       parentOrigin: configManager.get<string>('parentOrigin', ''),
       sourceCodeUrl: httpUrlOrEmpty(configManager.get<string>('sourceCodeUrl', '')),
+      // Set only once masked addresses are fully configured (domain and service key).
+      maskedAddressDomain: getMaskedAddressConfig()?.domain ?? '',
     },
     {
       // Runtime settings can change without new asset URLs. Prevent stale

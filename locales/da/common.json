@@ -1042,7 +1042,8 @@
       "general": "Generelt",
       "organize": "Mapper og tags",
       "addons": "Tilføjelser",
-      "backup": "Sikkerhedskopi og nulstilling"
+      "backup": "Sikkerhedskopi og nulstilling",
+      "masked_addresses": "Maskerede adresser"
     },
     "themes": {
       "title": "Temaer",
@@ -1922,6 +1923,42 @@
         "encryption": "Kryptering"
       }
     },
+    "masked_addresses": {
+      "title": "Maskerede adresser",
+      "description": "Giv adresser på {domain} ud i stedet for din rigtige. Mail til dem lander i din indbakke, og du kan slå en fra, så snart den får spam.",
+      "description_generic": "Giv engangsadresser ud i stedet for din rigtige. Mail til dem lander i din indbakke, og du kan slå en fra, så snart den får spam.",
+      "label_placeholder": "Hvad er den til? (f.eks. Netflix)",
+      "label_aria": "Hvad den maskerede adresse er til",
+      "create": "Ny maskeret adresse",
+      "loading": "Indlæser maskerede adresser…",
+      "load_failed": "Dine maskerede adresser kunne ikke indlæses.",
+      "retry": "Prøv igen",
+      "empty": "Ingen maskerede adresser endnu. Lav en til det næste sted, du tilmelder dig.",
+      "count": "{count} af {limit}",
+      "copy": "Kopiér {email}",
+      "copy_failed": "Kunne ikke kopiere til udklipsholderen",
+      "no_label": "Ingen etiket",
+      "edit_label": "Rediger etiket",
+      "save": "Gem",
+      "send_from": "Send fra den",
+      "send_from_hint": "Tilføj den som afsenderidentitet uden dit navn for at svare fra den",
+      "identity_created": "Du kan nu sende fra {email}",
+      "identity_failed": "Afsenderidentiteten kunne ikke tilføjes: {error}",
+      "enable": "Slå {email} til",
+      "disable": "Slå {email} fra",
+      "delete": "Slet",
+      "delete_aria": "Slet {email}",
+      "delete_title": "Slet maskeret adresse?",
+      "delete_message": "Mail til {email} afvises fra nu af. Adressen gives aldrig ud igen, så det kan ikke fortrydes.",
+      "footnote": "Slåede fra og slettede adresser afviser mail, så afsenderen får en returmeddelelse.",
+      "errors": {
+        "limit_reached": "Du har nået grænsen på {limit} maskerede adresser. Slet nogle, du ikke længere bruger.",
+        "session_expired": "Din session er udløbet. Genindlæs siden, og prøv igen.",
+        "account_not_found": "Din konto blev ikke fundet på mailserveren.",
+        "no_free_address": "Kunne ikke finde en ledig adresse. Prøv igen.",
+        "generic": "Noget gik galt. Prøv igen."
+      }
+    },
     "identities": {
       "description": "Administrér e-mailadresser du kan sende fra",
       "identities_count": {
@@ -2587,7 +2624,8 @@
       "manage": "Administrer regler",
       "senders_count": "{count, plural, one {# afsender} other {# afsendere}}",
       "cross_account": "Vælg beskeder fra én konto",
-      "opaque_hint": "Dine filtre er redigeret manuelt. Åbn filterindstillingerne",
+      "opaque_hint": "Dine filtre er redigeret manuelt. Åbn filterindstillingerne"
+,
       "loading": "Indlæser regler…",
       "load_failed": "Reglerne kunne ikke indlæses",
       "none": "Ingen regler endnu",

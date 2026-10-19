@@ -14,6 +14,7 @@ export type SettingsSearchTab =
   | 'filters'
   | 'organize'
   | 'security'
+  | 'masked_addresses'
   | 'calendar'
   | 'contacts'
   | 'files'
@@ -120,6 +121,7 @@ export const tabSearchPaths: Record<Tab, string[]> = {
   filters: ['settings.filters'],
   organize: ['settings.folders', 'settings.keywords'],
   security: ['settings.security'],
+  masked_addresses: ['settings.masked_addresses'],
   calendar: ['calendar.settings', 'calendar.management'],
   contacts: ['settings.contacts', 'contacts'],
   files: ['settings.files'],
@@ -144,6 +146,7 @@ export const tabKeywords: Record<Tab, string> = {
   filters: 'sieve rules block junk forward',
   organize: 'folders mailbox subscribe roles tags labels keywords colors nested',
   security: 'password 2fa two-factor passkey app password mfa api key token phone mobile app pair qr thunderbird outlook imap client encryption pgp smime',
+  masked_addresses: 'mask alias anonymous burner disposable hide email sign up privacy',
   calendar: 'event schedule appointment meeting timezone invitation ics tasks birthday working hours',
   contacts: 'address book contact',
   files: 'attachments cloud drive storage upload',

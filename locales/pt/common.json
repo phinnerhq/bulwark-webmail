@@ -1039,7 +1039,8 @@
       "general": "Geral",
       "organize": "Pastas e etiquetas",
       "addons": "Extras",
-      "backup": "Cópia de segurança e reposição"
+      "backup": "Cópia de segurança e reposição",
+      "masked_addresses": "Endereços mascarados"
     },
     "themes": {
       "title": "Temas",
@@ -1919,6 +1920,42 @@
         "encryption": "Encriptação"
       }
     },
+    "masked_addresses": {
+      "title": "Endereços mascarados",
+      "description": "Forneça endereços em {domain} em vez do seu endereço real. O correio enviado para eles chega à sua caixa de entrada, e pode desativar um assim que receber spam.",
+      "description_generic": "Forneça endereços descartáveis em vez do seu endereço real. O correio enviado para eles chega à sua caixa de entrada, e pode desativar um assim que receber spam.",
+      "label_placeholder": "Para que serve? (ex.: Netflix)",
+      "label_aria": "Para que serve o endereço mascarado",
+      "create": "Novo endereço mascarado",
+      "loading": "A carregar endereços mascarados…",
+      "load_failed": "Não foi possível carregar os seus endereços mascarados.",
+      "retry": "Tentar novamente",
+      "empty": "Ainda não tem endereços mascarados. Crie um para o próximo site onde se registar.",
+      "count": "{count} de {limit}",
+      "copy": "Copiar {email}",
+      "copy_failed": "Não foi possível copiar para a área de transferência",
+      "no_label": "Sem etiqueta",
+      "edit_label": "Editar etiqueta",
+      "save": "Guardar",
+      "send_from": "Enviar a partir dele",
+      "send_from_hint": "Adicioná-lo como identidade de envio, sem o seu nome, para responder a partir dele",
+      "identity_created": "Já pode enviar a partir de {email}",
+      "identity_failed": "Não foi possível adicionar a identidade de envio: {error}",
+      "enable": "Ativar {email}",
+      "disable": "Desativar {email}",
+      "delete": "Eliminar",
+      "delete_aria": "Eliminar {email}",
+      "delete_title": "Eliminar endereço mascarado?",
+      "delete_message": "O correio para {email} passa a ser recusado. O endereço nunca volta a ser atribuído, por isso não é possível anular.",
+      "footnote": "Endereços desativados ou eliminados recusam correio, pelo que o remetente recebe uma mensagem de devolução.",
+      "errors": {
+        "limit_reached": "Atingiu o limite de {limit} endereços mascarados. Elimine os que já não usa.",
+        "session_expired": "A sua sessão expirou. Recarregue a página e tente novamente.",
+        "account_not_found": "A sua conta não foi encontrada no servidor de correio.",
+        "no_free_address": "Não foi encontrado nenhum endereço livre. Tente novamente.",
+        "generic": "Algo correu mal. Tente novamente."
+      }
+    },
     "identities": {
       "description": "Gerencie endereços de e-mail que você pode usar para enviar",
       "identities_count": {
@@ -2587,7 +2624,8 @@
       "manage": "Gerenciar regras",
       "senders_count": "{count, plural, one {# remetente} other {# remetentes}}",
       "cross_account": "Selecione mensagens de uma única conta",
-      "opaque_hint": "Seus filtros foram editados manualmente. Abra as configurações de filtros",
+      "opaque_hint": "Seus filtros foram editados manualmente. Abra as configurações de filtros"
+,
       "loading": "A carregar regras…",
       "load_failed": "Não foi possível carregar as regras",
       "none": "Ainda não há regras",

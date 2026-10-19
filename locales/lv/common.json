@@ -1039,7 +1039,8 @@
       "general": "Vispārīgi",
       "organize": "Mapes un tagi",
       "addons": "Papildinājumi",
-      "backup": "Dublēšana un atiestatīšana"
+      "backup": "Dublēšana un atiestatīšana",
+      "masked_addresses": "Maskētās adreses"
     },
     "themes": {
       "title": "Tēmas",
@@ -1919,6 +1920,42 @@
         "encryption": "Šifrēšana"
       }
     },
+    "masked_addresses": {
+      "title": "Maskētās adreses",
+      "description": "Īstās adreses vietā dodiet adreses domēnā {domain}. Uz tām sūtītie e-pasti nonāk jūsu iesūtnē, un jūs varat kādu izslēgt, tiklīdz tajā sāk nākt surogātpasts.",
+      "description_generic": "Īstās adreses vietā dodiet vienreizējas adreses. Uz tām sūtītie e-pasti nonāk jūsu iesūtnē, un jūs varat kādu izslēgt, tiklīdz tajā sāk nākt surogātpasts.",
+      "label_placeholder": "Kam tā paredzēta? (piem., Netflix)",
+      "label_aria": "Kam maskētā adrese paredzēta",
+      "create": "Jauna maskētā adrese",
+      "loading": "Ielādē maskētās adreses…",
+      "load_failed": "Neizdevās ielādēt jūsu maskētās adreses.",
+      "retry": "Mēģināt vēlreiz",
+      "empty": "Jums vēl nav maskēto adrešu. Izveidojiet vienu nākamajai vietnei, kurā reģistrējaties.",
+      "count": "{count} no {limit}",
+      "copy": "Kopēt {email}",
+      "copy_failed": "Neizdevās kopēt starpliktuvē",
+      "no_label": "Bez etiķetes",
+      "edit_label": "Rediģēt etiķeti",
+      "save": "Saglabāt",
+      "send_from": "Sūtīt no tās",
+      "send_from_hint": "Pievienot kā sūtītāja identitāti bez jūsu vārda, lai atbildētu no tās",
+      "identity_created": "Tagad varat sūtīt no {email}",
+      "identity_failed": "Neizdevās pievienot sūtītāja identitāti: {error}",
+      "enable": "Ieslēgt {email}",
+      "disable": "Izslēgt {email}",
+      "delete": "Dzēst",
+      "delete_aria": "Dzēst {email}",
+      "delete_title": "Dzēst maskēto adresi?",
+      "delete_message": "E-pasti uz {email} turpmāk tiks noraidīti. Adrese nekad netiks piešķirta atkārtoti, tāpēc to nevar atsaukt.",
+      "footnote": "Izslēgtās un dzēstās adreses noraida e-pastus, tāpēc sūtītājs saņem nepiegādes paziņojumu.",
+      "errors": {
+        "limit_reached": "Jūs esat sasniedzis {limit} maskēto adrešu ierobežojumu. Izdzēsiet tās, kuras vairs neizmantojat.",
+        "session_expired": "Jūsu sesija ir beigusies. Pārlādējiet lapu un mēģiniet vēlreiz.",
+        "account_not_found": "Jūsu konts netika atrasts pasta serverī.",
+        "no_free_address": "Neizdevās atrast brīvu adresi. Mēģiniet vēlreiz.",
+        "generic": "Kaut kas nogāja greizi. Mēģiniet vēlreiz."
+      }
+    },
     "identities": {
       "description": "Pārvaldiet e-pasta adreses, no kurām varat sūtīt vēstules",
       "identities_count": {
@@ -2587,7 +2624,8 @@
       "manage": "Pārvaldīt noteikumus",
       "senders_count": "{count, plural, zero {# sūtītājiem} one {# sūtītāja} other {# sūtītājiem}}",
       "cross_account": "Izvēlieties vēstules no viena konta",
-      "opaque_hint": "Jūsu filtri ir rediģēti manuāli. Atveriet filtru iestatījumus",
+      "opaque_hint": "Jūsu filtri ir rediģēti manuāli. Atveriet filtru iestatījumus"
+,
       "loading": "Ielādē kārtulas…",
       "load_failed": "Neizdevās ielādēt kārtulas",
       "none": "Vēl nav kārtulu",

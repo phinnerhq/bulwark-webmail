@@ -1042,7 +1042,8 @@
       "general": "Üldine",
       "organize": "Kaustad ja sildid",
       "addons": "Lisad",
-      "backup": "Varundus ja lähtestamine"
+      "backup": "Varundus ja lähtestamine",
+      "masked_addresses": "Varjatud aadressid"
     },
     "themes": {
       "title": "Teemad",
@@ -1924,6 +1925,42 @@
         "devices": "Muud rakendused ja seadmed",
         "devices_description": "Kasuta oma posti väljaspool seda brauserit.",
         "encryption": "Krüpteerimine"
+      }
+    },
+    "masked_addresses": {
+      "title": "Varjatud aadressid",
+      "description": "Jaga oma päris aadressi asemel aadresse domeenil {domain}. Neile saadetud kirjad jõuavad sinu postkasti ja kui ühele hakkab rämpsposti tulema, saad selle välja lülitada.",
+      "description_generic": "Jaga oma päris aadressi asemel ühekordseid aadresse. Neile saadetud kirjad jõuavad sinu postkasti ja kui ühele hakkab rämpsposti tulema, saad selle välja lülitada.",
+      "label_placeholder": "Milleks see on? (nt Netflix)",
+      "label_aria": "Milleks varjatud aadress on",
+      "create": "Uus varjatud aadress",
+      "loading": "Varjatud aadresside laadimine…",
+      "load_failed": "Varjatud aadresse ei õnnestunud laadida.",
+      "retry": "Proovi uuesti",
+      "empty": "Varjatud aadresse veel pole. Loo üks järgmise saidi jaoks, kuhu registreerud.",
+      "count": "{count} / {limit}",
+      "copy": "Kopeeri {email}",
+      "copy_failed": "Lõikelauale kopeerimine ebaõnnestus",
+      "no_label": "Silt puudub",
+      "edit_label": "Muuda silti",
+      "save": "Salvesta",
+      "send_from": "Saada sellelt",
+      "send_from_hint": "Lisa see saatja identiteediks, ilma sinu nimeta, et sellelt vastata",
+      "identity_created": "Nüüd saad saata aadressilt {email}",
+      "identity_failed": "Saatja identiteeti ei õnnestunud lisada: {error}",
+      "enable": "Lülita {email} sisse",
+      "disable": "Lülita {email} välja",
+      "delete": "Kustuta",
+      "delete_aria": "Kustuta {email}",
+      "delete_title": "Kustutada varjatud aadress?",
+      "delete_message": "Aadressile {email} saadetud kirjad lükatakse edaspidi tagasi. Aadressi ei anta kunagi uuesti välja, seega seda ei saa tagasi võtta.",
+      "footnote": "Väljalülitatud ja kustutatud aadressid lükkavad kirjad tagasi, nii et saatja saab tagastusteate.",
+      "errors": {
+        "limit_reached": "Oled jõudnud {limit} varjatud aadressi piirini. Kustuta mõned, mida enam ei kasuta.",
+        "session_expired": "Sinu seanss aegus. Laadi leht uuesti ja proovi uuesti.",
+        "account_not_found": "Sinu kontot ei leitud meiliserverist.",
+        "no_free_address": "Vaba aadressi ei leitud. Proovi uuesti.",
+        "generic": "Midagi läks valesti. Proovi uuesti."
       }
     },
     "identities": {

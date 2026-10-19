@@ -1039,7 +1039,8 @@
       "general": "Général",
       "organize": "Dossiers et étiquettes",
       "addons": "Extensions",
-      "backup": "Sauvegarde et réinitialisation"
+      "backup": "Sauvegarde et réinitialisation",
+      "masked_addresses": "Adresses masquées"
     },
     "themes": {
       "title": "Thèmes",
@@ -1919,6 +1920,42 @@
         "encryption": "Chiffrement"
       }
     },
+    "masked_addresses": {
+      "title": "Adresses masquées",
+      "description": "Donnez des adresses sur {domain} au lieu de votre vraie adresse. Le courrier qui leur est envoyé arrive dans votre boîte, et vous pouvez en désactiver une dès qu'elle reçoit du spam.",
+      "description_generic": "Donnez des adresses jetables au lieu de votre vraie adresse. Le courrier qui leur est envoyé arrive dans votre boîte, et vous pouvez en désactiver une dès qu'elle reçoit du spam.",
+      "label_placeholder": "À quoi sert-elle ? (ex. Netflix)",
+      "label_aria": "À quoi sert l'adresse masquée",
+      "create": "Nouvelle adresse masquée",
+      "loading": "Chargement des adresses masquées…",
+      "load_failed": "Impossible de charger vos adresses masquées.",
+      "retry": "Réessayer",
+      "empty": "Aucune adresse masquée pour l'instant. Créez-en une pour le prochain site où vous vous inscrivez.",
+      "count": "{count} sur {limit}",
+      "copy": "Copier {email}",
+      "copy_failed": "Impossible de copier dans le presse-papiers",
+      "no_label": "Sans libellé",
+      "edit_label": "Modifier le libellé",
+      "save": "Enregistrer",
+      "send_from": "Envoyer depuis",
+      "send_from_hint": "L'ajouter comme identité d'envoi, sans votre nom, pour répondre depuis cette adresse",
+      "identity_created": "Vous pouvez maintenant envoyer depuis {email}",
+      "identity_failed": "Impossible d'ajouter l'identité d'envoi : {error}",
+      "enable": "Activer {email}",
+      "disable": "Désactiver {email}",
+      "delete": "Supprimer",
+      "delete_aria": "Supprimer {email}",
+      "delete_title": "Supprimer l'adresse masquée ?",
+      "delete_message": "Le courrier envoyé à {email} sera désormais refusé. L'adresse ne sera jamais réattribuée, cette action est donc définitive.",
+      "footnote": "Les adresses désactivées ou supprimées refusent le courrier : l'expéditeur reçoit un message d'erreur.",
+      "errors": {
+        "limit_reached": "Vous avez atteint la limite de {limit} adresses masquées. Supprimez celles que vous n'utilisez plus.",
+        "session_expired": "Votre session a expiré. Rechargez la page et réessayez.",
+        "account_not_found": "Votre compte est introuvable sur le serveur de messagerie.",
+        "no_free_address": "Aucune adresse libre trouvée. Réessayez.",
+        "generic": "Une erreur s'est produite. Réessayez."
+      }
+    },
     "identities": {
       "description": "Gérer les adresses email depuis lesquelles vous pouvez envoyer",
       "identities_count": {
@@ -2587,7 +2624,8 @@
       "manage": "Gérer les règles",
       "senders_count": "{count, plural, one {# expéditeur} other {# expéditeurs}}",
       "cross_account": "Sélectionnez des messages d'un seul compte",
-      "opaque_hint": "Vos filtres ont été modifiés à la main. Ouvrez les réglages des filtres",
+      "opaque_hint": "Vos filtres ont été modifiés à la main. Ouvrez les réglages des filtres"
+,
       "loading": "Chargement des règles…",
       "load_failed": "Impossible de charger les règles",
       "none": "Aucune règle pour l'instant",

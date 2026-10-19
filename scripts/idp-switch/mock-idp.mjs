@@ -42,6 +42,12 @@ let frozenAuthTime = null;
 // Stalwart refuses an account on a domain it does not host.
 const withoutMailbox = new Set();
 
+// Stalwart's management API as the masked-address service account sees it:
+// each person is an account on example.com whose aliases it can rewrite.
+const SERVICE_KEY = 'API_mock-masked-addresses';
+const domains = { a: 'example.com', f: 'anon.example.com' };
+const aliases = new Map(); // person -> [{ name, domainId, enabled, description }]
+
 const id = () => randomBytes(12).toString('hex');
 const now = () => Math.floor(Date.now() / 1000);
 
@@ -231,6 +237,31 @@ function jmapCall([name, args, callId], person) {
   return ['error', { type: 'unknownMethod' }, callId];
 }
 
+function stalwartAdmin(methodCalls) {
+  const accounts = [...new Set([...Object.values(people), 'carol@example.com', ...aliases.keys()])];
+  const results = new Map();
+  return methodCalls.map(([name, args, callId]) => {
+    const filter = args.filter ?? {};
+    let result;
+    if (name === 'x:Domain/query') {
+      result = { ids: Object.keys(domains).filter((d) => domains[d] === filter.name) };
+    } else if (name === 'x:Account/query') {
+      result = { ids: accounts.filter((p) => p === `${filter.name}@${domains[filter.domainId]}`) };
+    } else if (name === 'x:Account/get') {
+      const ids = args['#ids'] ? results.get(args['#ids'].resultOf).ids : args.ids;
+      result = { list: ids.map((p) => ({ id: p, emailAddress: p, aliases: Object.fromEntries((aliases.get(p) ?? []).map((a, i) => [String(i), a])) })) };
+    } else if (name === 'x:Account/set') {
+      const [[p, patch]] = Object.entries(args.update);
+      aliases.set(p, Object.values(patch.aliases));
+      result = { updated: { [p]: null } };
+    } else {
+      return ['error', { type: 'unknownMethod' }, callId];
+    }
+    results.set(callId, result);
+    return [name, result, callId];
+  });
+}
+
 async function jmap(req, res, url) {
   const cors = {
     'access-control-allow-origin': req.headers.origin ?? '*',
@@ -238,6 +269,13 @@ async function jmap(req, res, url) {
     'access-control-allow-methods': 'GET, POST, OPTIONS',
   };
   if (req.method === 'OPTIONS') return send(res, 204, '', cors);
+  if (req.headers.authorization === `Bearer ${SERVICE_KEY}`) {
+    if (url.pathname === '/jmap/session') return send(res, 200, { username: 'webmail-masks@example.com', primaryAccounts: { 'urn:stalwart:jmap': 'svc' } }, cors);
+    if (url.pathname === '/jmap/' && req.method === 'POST') {
+      const request = JSON.parse(await read(req) || '{}');
+      return send(res, 200, { methodResponses: stalwartAdmin(request.methodCalls ?? []) }, cors);
+    }
+  }
   const person = jmapPerson(req);
   if (!person || withoutMailbox.has(person)) return send(res, 401, { type: 'unauthorized' }, cors);
   if (url.pathname === '/.well-known/jmap' || url.pathname === '/jmap/session') return send(res, 200, jmapSession(person), cors);
@@ -272,11 +310,13 @@ https.createServer({ cert: readFileSync(certPath), key: readFileSync(keyPath) },
     if (path === '/.well-known/jmap' || path.startsWith('/jmap/')) return jmap(req, res, url);
     // Test controls.
     if (path === '/__events') return send(res, 200, events);
+    if (path === '/__aliases') return send(res, 200, aliases.get(url.searchParams.get('person')) ?? []);
     if (path === '/__reset') {
       events.length = 0;
       for (const key of Object.keys(nextPerson)) delete nextPerson[key];
       frozenAuthTime = null;
       withoutMailbox.clear();
+      aliases.clear();
       return send(res, 200, { ok: true });
     }
     if (path === '/__freeze-auth-time') {

@@ -1039,7 +1039,8 @@
       "general": "Genel",
       "organize": "Klasörler ve etiketler",
       "addons": "Eklentiler",
-      "backup": "Yedekleme ve sıfırlama"
+      "backup": "Yedekleme ve sıfırlama",
+      "masked_addresses": "Maskeli adresler"
     },
     "themes": {
       "title": "Temalar",
@@ -1919,6 +1920,42 @@
         "encryption": "Şifreleme"
       }
     },
+    "masked_addresses": {
+      "title": "Maskeli adresler",
+      "description": "Gerçek adresiniz yerine {domain} üzerindeki adresleri verin. Bunlara gelen postalar gelen kutunuza düşer ve spam almaya başlayan birini kapatabilirsiniz.",
+      "description_generic": "Gerçek adresiniz yerine tek kullanımlık adresler verin. Bunlara gelen postalar gelen kutunuza düşer ve spam almaya başlayan birini kapatabilirsiniz.",
+      "label_placeholder": "Ne için? (ör. Netflix)",
+      "label_aria": "Maskeli adresin ne için olduğu",
+      "create": "Yeni maskeli adres",
+      "loading": "Maskeli adresler yükleniyor…",
+      "load_failed": "Maskeli adresleriniz yüklenemedi.",
+      "retry": "Yeniden dene",
+      "empty": "Henüz maskeli adresiniz yok. Kaydolacağınız bir sonraki site için bir tane oluşturun.",
+      "count": "{count} / {limit}",
+      "copy": "{email} adresini kopyala",
+      "copy_failed": "Panoya kopyalanamadı",
+      "no_label": "Etiket yok",
+      "edit_label": "Etiketi düzenle",
+      "save": "Kaydet",
+      "send_from": "Buradan gönder",
+      "send_from_hint": "Ondan yanıt verebilmek için adınız olmadan gönderen kimliği olarak ekleyin",
+      "identity_created": "Artık {email} adresinden gönderebilirsiniz",
+      "identity_failed": "Gönderen kimliği eklenemedi: {error}",
+      "enable": "{email} adresini aç",
+      "disable": "{email} adresini kapat",
+      "delete": "Sil",
+      "delete_aria": "{email} adresini sil",
+      "delete_title": "Maskeli adres silinsin mi?",
+      "delete_message": "{email} adresine gelen postalar bundan sonra reddedilecek. Adres bir daha asla verilmez, bu yüzden bu işlem geri alınamaz.",
+      "footnote": "Kapatılan ve silinen adresler postayı reddeder, böylece gönderen bir geri dönüş bildirimi alır.",
+      "errors": {
+        "limit_reached": "{limit} maskeli adres sınırına ulaştınız. Artık kullanmadıklarınızı silin.",
+        "session_expired": "Oturumunuzun süresi doldu. Sayfayı yenileyip tekrar deneyin.",
+        "account_not_found": "Hesabınız posta sunucusunda bulunamadı.",
+        "no_free_address": "Boş adres bulunamadı. Tekrar deneyin.",
+        "generic": "Bir şeyler ters gitti. Tekrar deneyin."
+      }
+    },
     "identities": {
       "description": "Gönderebildiğiniz e-posta adreslerini yönetin",
       "identities_count": {
@@ -2587,7 +2624,8 @@
       "manage": "Kuralları yönet",
       "senders_count": "{count, plural, one {# gönderen} other {# gönderen}}",
       "cross_account": "Tek bir hesaptan iletiler seçin",
-      "opaque_hint": "Filtreleriniz elle düzenlenmiş. Filtre ayarlarını açın",
+      "opaque_hint": "Filtreleriniz elle düzenlenmiş. Filtre ayarlarını açın"
+,
       "loading": "Kurallar yükleniyor…",
       "load_failed": "Kurallar yüklenemedi",
       "none": "Henüz kural yok",

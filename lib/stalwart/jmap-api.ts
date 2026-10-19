@@ -31,6 +31,8 @@ export interface JmapFetchOptions {
 
 export interface JmapSessionDocument {
   apiUrl?: string;
+  /** Who the credential belongs to, as the server names them. */
+  username?: string;
   capabilities?: Record<string, unknown>;
   primaryAccounts?: Record<string, string>;
   accounts?: Record<string, unknown>;

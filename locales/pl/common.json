@@ -1039,7 +1039,8 @@
       "general": "Ogólne",
       "organize": "Foldery i tagi",
       "addons": "Dodatki",
-      "backup": "Kopia zapasowa i reset"
+      "backup": "Kopia zapasowa i reset",
+      "masked_addresses": "Adresy maskowane"
     },
     "themes": {
       "title": "Motywy",
@@ -1919,6 +1920,42 @@
         "encryption": "Szyfrowanie"
       }
     },
+    "masked_addresses": {
+      "title": "Adresy maskowane",
+      "description": "Podawaj adresy w {domain} zamiast swojego prawdziwego. Poczta do nich trafia do Twojej skrzynki, a gdy zacznie przychodzić spam, możesz adres wyłączyć.",
+      "description_generic": "Podawaj jednorazowe adresy zamiast swojego prawdziwego. Poczta do nich trafia do Twojej skrzynki, a gdy zacznie przychodzić spam, możesz adres wyłączyć.",
+      "label_placeholder": "Do czego służy? (np. Netflix)",
+      "label_aria": "Do czego służy adres maskowany",
+      "create": "Nowy adres maskowany",
+      "loading": "Wczytywanie adresów maskowanych…",
+      "load_failed": "Nie udało się wczytać adresów maskowanych.",
+      "retry": "Ponów",
+      "empty": "Nie masz jeszcze adresów maskowanych. Utwórz jeden dla następnej strony, na której się rejestrujesz.",
+      "count": "{count} z {limit}",
+      "copy": "Kopiuj {email}",
+      "copy_failed": "Nie udało się skopiować do schowka",
+      "no_label": "Bez etykiety",
+      "edit_label": "Edytuj etykietę",
+      "save": "Zapisz",
+      "send_from": "Wysyłaj z niego",
+      "send_from_hint": "Dodaj go jako tożsamość nadawcy, bez Twojego imienia, aby z niego odpowiadać",
+      "identity_created": "Możesz teraz wysyłać z {email}",
+      "identity_failed": "Nie udało się dodać tożsamości nadawcy: {error}",
+      "enable": "Włącz {email}",
+      "disable": "Wyłącz {email}",
+      "delete": "Usuń",
+      "delete_aria": "Usuń {email}",
+      "delete_title": "Usunąć adres maskowany?",
+      "delete_message": "Poczta do {email} będzie od teraz odrzucana. Adres nigdy nie zostanie przydzielony ponownie, więc tego nie można cofnąć.",
+      "footnote": "Wyłączone i usunięte adresy odrzucają pocztę, więc nadawca dostaje powiadomienie o niedostarczeniu.",
+      "errors": {
+        "limit_reached": "Osiągnięto limit {limit} adresów maskowanych. Usuń te, których już nie używasz.",
+        "session_expired": "Sesja wygasła. Odśwież stronę i spróbuj ponownie.",
+        "account_not_found": "Nie znaleziono Twojego konta na serwerze poczty.",
+        "no_free_address": "Nie znaleziono wolnego adresu. Spróbuj ponownie.",
+        "generic": "Coś poszło nie tak. Spróbuj ponownie."
+      }
+    },
     "identities": {
       "description": "Zarządzaj adresami e-mail, z których możesz wysyłać wiadomości",
       "identities_count": {
@@ -2587,7 +2624,8 @@
       "manage": "Zarządzaj regułami",
       "senders_count": "{count, plural, one {# nadawcy} few {# nadawców} many {# nadawców} other {# nadawcy}}",
       "cross_account": "Wybierz wiadomości z jednego konta",
-      "opaque_hint": "Twoje filtry zostały edytowane ręcznie. Otwórz ustawienia filtrów",
+      "opaque_hint": "Twoje filtry zostały edytowane ręcznie. Otwórz ustawienia filtrów"
+,
       "loading": "Wczytywanie reguł…",
       "load_failed": "Nie udało się wczytać reguł",
       "none": "Brak reguł",

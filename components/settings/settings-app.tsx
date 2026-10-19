@@ -24,6 +24,7 @@ import {
   PenLine,
   LayoutList,
   Database,
+  MasksTheater,
   X,
   type AppIcon,
 } from '@/components/icons';
@@ -44,6 +45,7 @@ import { FilterSettings } from '@/components/settings/filter-settings';
 import { AboutDataSettings, AboutFooter } from '@/components/settings/about-data-settings';
 import { OrganizeSettings } from '@/components/settings/organize-settings';
 import { AccountSecuritySettings } from '@/components/settings/account-security-settings';
+import { MaskedAddressSettings } from '@/components/settings/masked-address-settings';
 import { FilesSettingsComponent } from '@/components/settings/files-settings';
 import { ContactsSettings } from '@/components/settings/contacts-settings';
 import { AddonsSettings } from '@/components/settings/addons-settings';
@@ -125,6 +127,7 @@ const tabIcons: Record<Tab, AppIcon> = {
   filters: Filter,
   organize: FolderOpen,
   security: Shield,
+  masked_addresses: MasksTheater,
   calendar: Calendar,
   contacts: BookUser,
   files: HardDrive,
@@ -260,7 +263,7 @@ export function SettingsApp({ linkSegments: routeSegments }: SettingsAppProps = 
   const mvShell = useMountainViewShell(isEmbedded);
   const [initialCheckDone, setInitialCheckDone] = useState(() => useAuthStore.getState().isAuthenticated && !!useAuthStore.getState().client);
   const { quota, isPushConnected } = useEmailStore();
-  const { stalwartFeaturesEnabled } = useConfig();
+  const { stalwartFeaturesEnabled, maskedAddressDomain } = useConfig();
   const { isFeatureEnabled } = usePolicyStore();
   const archiveActionEnabled = isFeatureEnabled('archiveActionEnabled');
   // A tab in the URL wins over the persisted one; without it, nothing changes.
@@ -631,6 +634,7 @@ export function SettingsApp({ linkSegments: routeSegments }: SettingsAppProps = 
     // You and the app
     { id: 'account', label: t('tabs.account'), icon: tabIcons.account, group: 'top' },
     ...(stalwartFeaturesEnabled ? [{ id: 'security' as Tab, label: t('tabs.security'), icon: tabIcons.security, group: 'top' as TabGroup }] : []),
+    ...(maskedAddressDomain ? [{ id: 'masked_addresses' as Tab, label: t('tabs.masked_addresses'), icon: tabIcons.masked_addresses, group: 'top' as TabGroup }] : []),
     { id: 'notifications', label: t('tabs.notifications'), icon: tabIcons.notifications, group: 'top' },
     { id: 'general', label: t('tabs.general'), icon: tabIcons.general, group: 'top' },
     { id: 'appearance', label: t('tabs.appearance'), icon: tabIcons.appearance, group: 'top' },
@@ -780,6 +784,7 @@ export function SettingsApp({ linkSegments: routeSegments }: SettingsAppProps = 
       {effectiveActiveTab === 'filters' && <FilterSettings />}
       {effectiveActiveTab === 'organize' && <OrganizeSettings />}
       {effectiveActiveTab === 'security' && <AccountSecuritySettings />}
+      {effectiveActiveTab === 'masked_addresses' && <MaskedAddressSettings />}
       {effectiveActiveTab === 'calendar' && (
         managedAccountId
           ? <CalendarManagementSettings />

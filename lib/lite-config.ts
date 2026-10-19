@@ -93,6 +93,8 @@ export function applyLiteConfig(raw: unknown, defaults?: { jmapServerUrl?: strin
     embeddedMode: bool(input.embeddedMode, false),
     parentOrigin: str(input.parentOrigin, ''),
     sourceCodeUrl: httpUrlOrEmpty(input.sourceCodeUrl),
+    // Needs the server-side service key.
+    maskedAddressDomain: '',
     ...LITE_FORCED_FLAGS,
   };
 }

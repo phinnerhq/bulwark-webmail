@@ -1039,7 +1039,8 @@
       "general": "一般",
       "organize": "フォルダーとタグ",
       "addons": "アドオン",
-      "backup": "バックアップとリセット"
+      "backup": "バックアップとリセット",
+      "masked_addresses": "マスクアドレス"
     },
     "themes": {
       "title": "テーマ",
@@ -1919,6 +1920,42 @@
         "encryption": "暗号化"
       }
     },
+    "masked_addresses": {
+      "title": "マスクアドレス",
+      "description": "本当のアドレスの代わりに {domain} のアドレスを使いましょう。届いたメールは受信トレイに入り、スパムが来始めたらそのアドレスをオフにできます。",
+      "description_generic": "本当のアドレスの代わりに使い捨てアドレスを使いましょう。届いたメールは受信トレイに入り、スパムが来始めたらそのアドレスをオフにできます。",
+      "label_placeholder": "用途は？（例: Netflix）",
+      "label_aria": "マスクアドレスの用途",
+      "create": "新しいマスクアドレス",
+      "loading": "マスクアドレスを読み込み中…",
+      "load_failed": "マスクアドレスを読み込めませんでした。",
+      "retry": "再試行",
+      "empty": "マスクアドレスはまだありません。次に登録するサイト用に作成しましょう。",
+      "count": "{count} / {limit}",
+      "copy": "{email} をコピー",
+      "copy_failed": "クリップボードにコピーできませんでした",
+      "no_label": "ラベルなし",
+      "edit_label": "ラベルを編集",
+      "save": "保存",
+      "send_from": "このアドレスから送信",
+      "send_from_hint": "このアドレスから返信できるよう、名前なしで送信者IDとして追加します",
+      "identity_created": "{email} から送信できるようになりました",
+      "identity_failed": "送信者IDを追加できませんでした: {error}",
+      "enable": "{email} をオンにする",
+      "disable": "{email} をオフにする",
+      "delete": "削除",
+      "delete_aria": "{email} を削除",
+      "delete_title": "マスクアドレスを削除しますか？",
+      "delete_message": "今後 {email} 宛てのメールは拒否されます。このアドレスが再び割り当てられることはないため、元に戻せません。",
+      "footnote": "オフまたは削除したアドレスはメールを拒否するため、送信者には不達通知が返ります。",
+      "errors": {
+        "limit_reached": "マスクアドレスの上限（{limit} 件）に達しました。使わなくなったものを削除してください。",
+        "session_expired": "セッションの有効期限が切れました。ページを再読み込みしてもう一度お試しください。",
+        "account_not_found": "メールサーバー上にアカウントが見つかりませんでした。",
+        "no_free_address": "空いているアドレスが見つかりませんでした。もう一度お試しください。",
+        "generic": "問題が発生しました。もう一度お試しください。"
+      }
+    },
     "identities": {
       "description": "送信に使用するメールアドレスを管理",
       "identities_count": {
@@ -2587,7 +2624,8 @@
       "manage": "ルールを管理",
       "senders_count": "{count, plural, other {送信者 # 人}}",
       "cross_account": "1 つのアカウントのメールを選択してください",
-      "opaque_hint": "フィルターは手動で編集されています。フィルター設定を開いてください",
+      "opaque_hint": "フィルターは手動で編集されています。フィルター設定を開いてください"
+,
       "loading": "ルールを読み込み中…",
       "load_failed": "ルールを読み込めませんでした",
       "none": "ルールはまだありません",
