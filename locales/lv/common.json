@@ -69,6 +69,8 @@
       "missing_params": "Trūkst autorizācijas datu. Mēģiniet pierakstīties vēlreiz.",
       "token_exchange_failed": "Neizdevās pabeigt autentifikāciju. Mēģiniet vēlreiz.",
       "access_denied": "Piekļuve liegta. Sazinieties ar administratoru.",
+      "mailbox_unavailable": "Pierakstīšanās izdevās, bet pasta serverī šim kontam nav pastkastes.",
+      "back_to_mail": "Atpakaļ uz pastu",
       "back_to_login": "Atgriezties pie pierakstīšanās"
     }
   },

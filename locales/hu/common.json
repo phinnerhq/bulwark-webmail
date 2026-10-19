@@ -69,6 +69,8 @@
       "missing_params": "Hiányzó engedélyezési adatok. Kérjük, próbáld meg újra a bejelentkezést.",
       "token_exchange_failed": "Nem sikerült befejezni a hitelesítést. Kérjük, próbáld újra.",
       "access_denied": "A hozzáférés megtagadva. Kérjük, vedd fel a kapcsolatot a rendszergazdával.",
+      "mailbox_unavailable": "Sikeres bejelentkezés, de a levelezőszerveren nincs postafiók ehhez a fiókhoz.",
+      "back_to_mail": "Vissza a levelekhez",
       "back_to_login": "Vissza a bejelentkezéshez"
     }
   },

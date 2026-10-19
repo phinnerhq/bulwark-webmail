@@ -69,6 +69,8 @@
       "missing_params": "Manglende godkendelsesdata. Prøv at logge ind igen.",
       "token_exchange_failed": "Kunne ikke fuldføre godkendelse. Prøv igen.",
       "access_denied": "Adgang blev nægtet. Kontakt din administrator.",
+      "mailbox_unavailable": "Logget ind, men mailserveren har ingen postkasse til denne konto.",
+      "back_to_mail": "Tilbage til mail",
       "back_to_login": "Tilbage til login"
     }
   },

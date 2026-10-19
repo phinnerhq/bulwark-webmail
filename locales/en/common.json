@@ -69,6 +69,8 @@
       "missing_params": "Missing authorization data. Please try signing in again.",
       "token_exchange_failed": "Failed to complete authentication. Please try again.",
       "access_denied": "Access was denied. Please contact your administrator.",
+      "mailbox_unavailable": "Signed in, but the mail server has no mailbox for this account.",
+      "back_to_mail": "Back to mail",
       "back_to_login": "Back to login"
     }
   },

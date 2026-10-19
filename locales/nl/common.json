@@ -69,6 +69,8 @@
       "missing_params": "Ontbrekende autorisatiegegevens. Probeer opnieuw in te loggen.",
       "token_exchange_failed": "Authenticatie kon niet worden voltooid. Probeer het opnieuw.",
       "access_denied": "Toegang geweigerd. Neem contact op met uw beheerder.",
+      "mailbox_unavailable": "Ingelogd, maar de mailserver heeft geen mailbox voor dit account.",
+      "back_to_mail": "Terug naar e-mail",
       "back_to_login": "Terug naar inloggen"
     }
   },

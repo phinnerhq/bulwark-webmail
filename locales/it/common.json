@@ -69,6 +69,8 @@
       "missing_params": "Dati di autorizzazione mancanti. Prova ad accedere di nuovo.",
       "token_exchange_failed": "Impossibile completare l'autenticazione. Riprova.",
       "access_denied": "Accesso negato. Contatta il tuo amministratore.",
+      "mailbox_unavailable": "Accesso eseguito, ma il server di posta non ha una casella per questo account.",
+      "back_to_mail": "Torna alla posta",
       "back_to_login": "Torna al login"
     }
   },

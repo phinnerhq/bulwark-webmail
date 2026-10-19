@@ -69,6 +69,8 @@
       "missing_params": "Données d'autorisation manquantes. Veuillez réessayer.",
       "token_exchange_failed": "Impossible de finaliser l'authentification. Veuillez réessayer.",
       "access_denied": "L'accès a été refusé. Veuillez contacter votre administrateur.",
+      "mailbox_unavailable": "Connexion réussie, mais le serveur de messagerie n'a aucune boîte aux lettres pour ce compte.",
+      "back_to_mail": "Retour aux e-mails",
       "back_to_login": "Retour à la connexion"
     }
   },

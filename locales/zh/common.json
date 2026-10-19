@@ -69,6 +69,8 @@
       "missing_params": "缺少授权数据。请尝试重新登录。",
       "token_exchange_failed": "无法完成身份验证。请再试一次。",
       "access_denied": "访问被拒绝。请联系您的管理员。",
+      "mailbox_unavailable": "已登录，但邮件服务器上没有此账户的邮箱。",
+      "back_to_mail": "返回邮件",
       "back_to_login": "返回登录"
     }
   },

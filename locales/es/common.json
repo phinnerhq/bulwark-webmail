@@ -69,6 +69,8 @@
       "missing_params": "Faltan datos de autorización. Intenta iniciar sesión de nuevo.",
       "token_exchange_failed": "No se pudo completar la autenticación. Inténtalo de nuevo.",
       "access_denied": "Acceso denegado. Contacta a tu administrador.",
+      "mailbox_unavailable": "Sesión iniciada, pero el servidor de correo no tiene ningún buzón para esta cuenta.",
+      "back_to_mail": "Volver al correo",
       "back_to_login": "Volver al inicio de sesión"
     }
   },

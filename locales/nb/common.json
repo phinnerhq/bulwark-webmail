@@ -69,6 +69,8 @@
       "missing_params": "Manglende autorisasjonsdata. Prøv å logge på igjen.",
       "token_exchange_failed": "Kunne ikke fullføre autentiseringen. Prøv igjen.",
       "access_denied": "Du fikk ikke tilgang. Kontakt administratoren din.",
+      "mailbox_unavailable": "Logget inn, men e-postserveren har ingen postkasse for denne kontoen.",
+      "back_to_mail": "Tilbake til e-post",
       "back_to_login": "Tilbake til pålogging"
     }
   },

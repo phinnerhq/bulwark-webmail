@@ -69,6 +69,8 @@
       "missing_params": "Falten dades d'autorització. Torneu a iniciar la sessió.",
       "token_exchange_failed": "No s'ha pogut completar l'autenticació. Torneu-ho a provar.",
       "access_denied": "S'ha denegat l'accés. Contacteu amb l'administrador.",
+      "mailbox_unavailable": "Sessió iniciada, però el servidor de correu no té cap bústia per a aquest compte.",
+      "back_to_mail": "Torna al correu",
       "back_to_login": "Torna a l'inici de sessió"
     }
   },

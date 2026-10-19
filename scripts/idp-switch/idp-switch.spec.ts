@@ -117,3 +117,35 @@ test("adding an account ends the session of the latest sign-in, not of the activ
   expect(events.filter((e) => e.type === "different_user_authenticated")).toEqual([]);
   expect(events.filter((e) => e.type === "login").map((e) => e.person)).toEqual(["alice@example.com", "bob@example.com", "carol@example.com"]);
 });
+
+test("adding an account the mail server refuses leaves the first one as it was", async ({ page }) => {
+  await signInWith(page, "North");
+  await expectMailView(page);
+
+  // Bob signs in at the provider, but the mail server hosts no mailbox for him.
+  await page.request.get(`${idp}/__no-mailbox?person=bob@example.com`);
+  await addAccountWith(page, "South");
+  await expect(page.getByText("the mail server has no mailbox for this account")).toBeVisible({ timeout: 30_000 });
+
+  // Alice was not signed in again in Bob's place, nor moved to his slot.
+  const accounts = await page.evaluate(() => JSON.parse(localStorage.getItem("account-registry") ?? "null")?.state?.accounts ?? []);
+  expect(accounts.map((a: { username: string; cookieSlot: number }) => [a.username, a.cookieSlot])).toEqual([["alice@example.com", 0]]);
+
+  await page.getByRole("button", { name: "Back to mail" }).click();
+  await expectMailView(page);
+  await expect(page.getByText("alice@example.com").first()).toBeVisible();
+  expect(await refreshes(page, 0)).toBe(true);
+});
+
+test("a sign-in left unfinished in the browser does not claim the next one's return", async ({ page }) => {
+  // What a failed or abandoned browser-side sign-in (adding an account) leaves.
+  await page.goto("/en/login");
+  await page.evaluate(() => {
+    sessionStorage.setItem("oauth_state", "left-behind");
+    sessionStorage.setItem("oauth_code_verifier", "left-behind");
+    sessionStorage.setItem("oauth_server_url", "https://127.0.0.1:3171");
+  });
+
+  await signInWith(page, "South");
+  await expectMailView(page);
+});
