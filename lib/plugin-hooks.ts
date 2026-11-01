@@ -1,6 +1,7 @@
 // Plugin Hook Bus - event bus system for plugin lifecycle hooks
 
 import type { CalendarEventFormView, Disposable } from './plugin-types';
+import { rowBadgeHandlersChanged } from './plugin-sandbox/row-badges';
 
 // ─── Error Tracker (Circuit Breaker) ─────────────────────────
 
@@ -72,24 +73,50 @@ const BLOB_UPLOAD_TIMEOUT_MS = 15 * 60_000;
 
 class HookTimeoutError extends Error {}
 
-let timeoutListener: ((pluginId: string) => void) | null = null;
-
-/**
- * Called with the plugin id whenever one of its handlers runs out of time.
- * The loader uses it to close that plugin's open dialogs: the host has
- * already moved on, so a dialog left on screen would answer nothing.
- */
-export function setHookTimeoutListener(listener: ((pluginId: string) => void) | null): void {
-  timeoutListener = listener;
+/** Tells the hook timer when a plugin is waiting on the user. */
+export interface HookDialogGate {
+  /** True while the plugin has a dialog open or queued. */
+  hasOpenDialog(pluginId: string): boolean;
+  /** Calls `cb` once the plugin has no dialog left; returns an unsubscribe. */
+  whenDialogsClosed(pluginId: string, cb: () => void): () => void;
 }
 
-function withTimeout<T>(promise: T | Promise<T>, ms: number = DEFAULT_TIMEOUT_MS): Promise<T> {
+let dialogGate: HookDialogGate | null = null;
+
+/**
+ * A handler that asks the user something (a PGP passphrase inside
+ * onRenderEmailBody) is not hung. The loader passes the dialog queue in here
+ * so the timer stops while that plugin has a dialog open and starts over with
+ * the full budget once the user has answered (#1302).
+ */
+export function setHookDialogGate(gate: HookDialogGate | null): void {
+  dialogGate = gate;
+}
+
+function withTimeout<T>(pluginId: string, promise: T | Promise<T>, ms: number = DEFAULT_TIMEOUT_MS): Promise<T> {
   if (!(promise instanceof Promise)) return Promise.resolve(promise);
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new HookTimeoutError(`Hook timed out after ${ms}ms`)), ms);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stopWaiting: (() => void) | undefined;
+    const arm = () => {
+      stopWaiting = undefined;
+      timer = setTimeout(expire, ms);
+    };
+    const expire = () => {
+      if (dialogGate?.hasOpenDialog(pluginId)) {
+        stopWaiting = dialogGate.whenDialogsClosed(pluginId, arm);
+        return;
+      }
+      reject(new HookTimeoutError(`Hook timed out after ${ms}ms`));
+    };
+    const settle = () => {
+      clearTimeout(timer);
+      stopWaiting?.();
+    };
+    arm();
     promise.then(
-      (val) => { clearTimeout(timer); resolve(val); },
-      (err) => { clearTimeout(timer); reject(err); },
+      (val) => { settle(); resolve(val); },
+      (err) => { settle(); reject(err); },
     );
   });
 }
@@ -132,38 +159,38 @@ export class HookBus<T extends (...args: any[]) => any> {
    * @param opts.failClosed For intercepts guarding an action that can't be
    *   taken back (sending mail): a handler that throws or runs out of time
    *   cancels the action instead of letting it through.
+   * @param opts.onChange Called when handlers come or go, for UI that asked
+   *   the bus before a plugin started (row badges).
    */
   constructor(
     private readonly timeoutMs: number = DEFAULT_TIMEOUT_MS,
-    private readonly opts: { failClosed?: boolean } = {},
+    private readonly opts: { failClosed?: boolean; onChange?: () => void } = {},
   ) {}
 
-  private recordFailure(pluginId: string, err: unknown): void {
-    pluginErrorTracker.record(pluginId, err);
-    if (err instanceof HookTimeoutError) {
-      try { timeoutListener?.(pluginId); } catch { /* ignore */ }
-    }
+  private setHandlers(next: HookEntry<T>[]): void {
+    const changed = next.length !== this.handlers.length;
+    this.handlers = next;
+    if (changed) this.opts.onChange?.();
   }
 
   register(pluginId: string, handler: T, order: number = 100): Disposable {
     const entry: HookEntry<T> = { pluginId, handler, order };
-    this.handlers.push(entry);
-    this.handlers.sort((a, b) => a.order - b.order);
+    this.setHandlers([...this.handlers, entry].sort((a, b) => a.order - b.order));
     return {
       dispose: () => {
-        this.handlers = this.handlers.filter(h => h !== entry);
+        this.setHandlers(this.handlers.filter(h => h !== entry));
       },
     };
   }
 
   /** Remove all handlers for a given plugin */
   removePlugin(pluginId: string): void {
-    this.handlers = this.handlers.filter(h => h.pluginId !== pluginId);
+    this.setHandlers(this.handlers.filter(h => h.pluginId !== pluginId));
   }
 
   /** Remove all handlers */
   clear(): void {
-    this.handlers = [];
+    this.setHandlers([]);
   }
 
   get size(): number {
@@ -175,9 +202,9 @@ export class HookBus<T extends (...args: any[]) => any> {
     for (const { pluginId, handler } of this.handlers) {
       if (pluginErrorTracker.isDisabled(pluginId)) continue;
       try {
-        await withTimeout(handler(...args), this.timeoutMs);
+        await withTimeout(pluginId, handler(...args), this.timeoutMs);
       } catch (err) {
-        this.recordFailure(pluginId, err);
+        pluginErrorTracker.record(pluginId, err);
       }
     }
   }
@@ -199,9 +226,9 @@ export class HookBus<T extends (...args: any[]) => any> {
     for (const { pluginId: owner, handler } of this.handlers) {
       if (owner !== pluginId || pluginErrorTracker.isDisabled(owner)) continue;
       try {
-        await withTimeout(handler(...args), this.timeoutMs);
+        await withTimeout(owner, handler(...args), this.timeoutMs);
       } catch (err) {
-        this.recordFailure(owner, err);
+        pluginErrorTracker.record(owner, err);
       }
     }
   }
@@ -220,10 +247,10 @@ export class HookBus<T extends (...args: any[]) => any> {
     for (const { pluginId, handler } of this.handlers) {
       if (pluginErrorTracker.isDisabled(pluginId)) continue;
       try {
-        const result = await withTimeout(handler(...args), Math.max(this.timeoutMs, INTERCEPT_TIMEOUT_MS));
+        const result = await withTimeout(pluginId, handler(...args), Math.max(this.timeoutMs, INTERCEPT_TIMEOUT_MS));
         if (result === false) return 'vetoed';
       } catch (err) {
-        this.recordFailure(pluginId, err);
+        pluginErrorTracker.record(pluginId, err);
         if (this.opts.failClosed) return 'failed';
       }
     }
@@ -241,9 +268,9 @@ export class HookBus<T extends (...args: any[]) => any> {
       if (pluginErrorTracker.isDisabled(pluginId)) continue;
       let result: unknown;
       try {
-        result = await withTimeout(handler(...args), Math.max(this.timeoutMs, INTERCEPT_TIMEOUT_MS));
+        result = await withTimeout(pluginId, handler(...args), Math.max(this.timeoutMs, INTERCEPT_TIMEOUT_MS));
       } catch (err) {
-        this.recordFailure(pluginId, err);
+        pluginErrorTracker.record(pluginId, err);
         return 'failed';
       }
       if (result === false) return 'handled';
@@ -271,9 +298,9 @@ export class HookBus<T extends (...args: any[]) => any> {
       if (pluginErrorTracker.isDisabled(pluginId)) continue;
       let result: unknown;
       try {
-        result = await withTimeout((handler as (v: V) => unknown)(value), budget);
+        result = await withTimeout(pluginId, (handler as (v: V) => unknown)(value), budget);
       } catch (err) {
-        this.recordFailure(pluginId, err);
+        pluginErrorTracker.record(pluginId, err);
         continue;
       }
       if (result === false) return { allowed: false };
@@ -284,18 +311,42 @@ export class HookBus<T extends (...args: any[]) => any> {
     return { allowed: true, value };
   }
 
+  /**
+   * Ask every handler at once, each with the same initial value, and keep
+   * each answer with the plugin that gave it, for hooks whose results the
+   * host shows per plugin (onProvideSearchResults): the plugins asked, in
+   * their order, each with its answer to come, so the host can show one as
+   * soon as it comes and knows who it still waits for. A handler that throws
+   * or runs out of time answers null.
+   */
+  collect<V>(initial: V, ...rest: unknown[]): { pluginId: string; answer: Promise<{ value: unknown } | null> }[] {
+    const asked = this.handlers.filter(({ pluginId }) => !pluginErrorTracker.isDisabled(pluginId));
+    return asked.map(({ pluginId, handler }) => ({
+      pluginId,
+      answer: (async () => {
+        try {
+          const value: unknown = await withTimeout(pluginId, handler(initial, ...rest), this.timeoutMs);
+          return { value };
+        } catch (err) {
+          pluginErrorTracker.record(pluginId, err);
+          return null;
+        }
+      })(),
+    }));
+  }
+
   /** Fire handlers as transforms - each receives the output of the previous */
   async transform<V>(initial: V, ...rest: unknown[]): Promise<V> {
     let value = initial;
     for (const { pluginId, handler } of this.handlers) {
       if (pluginErrorTracker.isDisabled(pluginId)) continue;
       try {
-        const result = await withTimeout(handler(value, ...rest), this.timeoutMs);
+        const result = await withTimeout(pluginId, handler(value, ...rest), this.timeoutMs);
         if (result !== undefined && result !== false) {
           value = result as V;
         }
       } catch (err) {
-        this.recordFailure(pluginId, err);
+        pluginErrorTracker.record(pluginId, err);
       }
     }
     return value;
@@ -445,9 +496,10 @@ export const emailHooks = {
   // renderer for an attachment. Initial value: AttachmentPreview, second
   // argument: AttachmentInfo.
   onAttachmentPreview: new HookBus(),
-  // Transform hook - lets plugins contribute additional results to the global
-  // search panel. Initial value: ExternalSearchResult[]. Second argument:
-  // { query: string, filters: SearchFilters }.
+  // Lets plugins contribute results from elsewhere to a search, drawn above
+  // its message list (lib/plugin-search-results.ts). Each handler is asked
+  // on its own with an empty ExternalSearchResult[] and { query, filters },
+  // so a click can go back to the plugin that gave the entry.
   onProvideSearchResults: new HookBus(),
   // Observer fired (debounced) when the composer draft body, subject, or
   // recipients change. Handler receives a DraftView snapshot. Use for AI
@@ -793,7 +845,8 @@ export const renderHooks = {
   // Second argument: { emailId: string; email: EmailReadView }
   // Handlers return a new (or extended) badges array.
   // Rendered by the email list row component next to the subject line.
-  onEmailListItemRender: new HookBus(),
+  // Rows drawn before a plugin started ask again once its handler is there.
+  onEmailListItemRender: new HookBus(undefined, { onChange: rowBadgeHandlersChanged }),
   // Transform hook - runs when an email is opened, BEFORE the viewer computes
   // the body it will render. Initial value: RenderableBody { html, text,
   // attachments, handledBy? }. Second argument: MessageContext { id,

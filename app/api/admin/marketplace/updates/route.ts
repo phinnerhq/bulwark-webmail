@@ -8,14 +8,18 @@ import {
   directoryJson,
   getDirectoryChannel,
   getDirectoryUrl,
+  directoryOff,
+  DIRECTORY_OFF_MESSAGE,
   installedExtensions,
   v2Url,
   type DirectoryAdvisory,
+  type DirectoryChangelogEntry,
   type DirectoryVersion,
 } from '@/lib/admin/marketplace-directory';
 
 export interface UpdatesAnswer {
-  updates: Array<DirectoryVersion & { slug: string; currentVersion: string; changelog: string | null }>;
+  /** `changelogs` is missing from directories older than 2026-10-30; `changelog` is then the offered version's alone. */
+  updates: Array<DirectoryVersion & { slug: string; currentVersion: string; changelog: string | null; changelogs?: DirectoryChangelogEntry[] }>;
   yanked: Array<{ slug: string; version: string; reason: string | null; at: string }>;
   deprecated: Array<{ slug: string; message: string | null; replacement: string | null }>;
   suspended: string[];
@@ -43,6 +47,13 @@ export async function GET(request: NextRequest) {
     const list = [...installed].map(([id, e]) => ({ id, ...e }));
     const ask = list.filter((e) => askDirectoryAbout(e.source)).map((e) => ({ slug: e.id, version: e.version }));
 
+    // The installed list is still useful with the official directory off (#903).
+    if (await directoryOff()) {
+      return NextResponse.json(
+        { installed: list, ...EMPTY, directoryUrl: null, channel: getDirectoryChannel(), appVersion: APP_VERSION || null, error: DIRECTORY_OFF_MESSAGE },
+        { headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
     const directoryUrl = await getDirectoryUrl();
     const channel = getDirectoryChannel();
     let answer: UpdatesAnswer = EMPTY;

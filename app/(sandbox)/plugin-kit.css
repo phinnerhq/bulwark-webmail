@@ -1,5 +1,5 @@
 /* Styles for the plugin UI kit (lib/plugin-sandbox/ui-kit), loaded into
-   every plugin iframe. Built from the same Tailwind classes as the app's own
+   every plugin iframe; scripts/build-plugin-sandbox.mjs compiles it. Built from the same Tailwind classes as the app's own
    components, so a kit Button is the app's Button. Only the kit's sources
    are scanned, which keeps the file small.
 
@@ -72,5 +72,43 @@
   }
   :where(.dark .bk select) {
     color-scheme: dark;
+  }
+}
+
+/* The app's focus outline (app/accessibility.css) for the kit's own
+   elements: a real outline instead of a box-shadow ring, so it also shows in
+   forced colours. Kit components carry no focus ring of their own. Only
+   containers focused from script (tabindex="-1" without a control role) skip
+   it. */
+:is(.bk, .bk *):focus-visible:not([tabindex="-1"]:not(a[href], button, input, select, textarea, [role="button"], [role="menuitem"], [role="option"], [role="tab"], [role="row"], [role="gridcell"], [role="checkbox"], [role="switch"], [role="radio"])) {
+  outline: 2px solid var(--color-ring) !important;
+  outline-offset: 2px !important;
+}
+:is(.bk [role="option"], .bk [role="row"], .bk [role="tab"], .bk .focus-inset, .bk.focus-inset):focus-visible {
+  outline-offset: -2px !important;
+}
+@media (forced-colors: active) {
+  :is(.bk, .bk *):focus-visible {
+    outline-color: Highlight !important;
+  }
+  /* Forced colours drop the switch's tint and ring; a border and a solid
+     knob keep on and off apart (as app/accessibility.css does). */
+  [role="switch"].bk {
+    border: 1px solid ButtonText !important;
+  }
+  [role="switch"].bk > span {
+    forced-color-adjust: none;
+    background-color: ButtonText !important;
+  }
+  [role="switch"].bk[aria-checked="true"] {
+    background-color: Highlight !important;
+    border-color: Highlight !important;
+  }
+  [role="switch"].bk[aria-checked="true"] > span {
+    background-color: HighlightText !important;
+  }
+  :is(.bk [aria-pressed="true"], .bk [role="radio"][aria-checked="true"], .bk [role="tab"][aria-selected="true"]) {
+    background-color: Highlight !important;
+    color: HighlightText !important;
   }
 }

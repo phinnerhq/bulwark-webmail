@@ -15,7 +15,7 @@ interface MvSearchFormProps {
   folderSelect?: ReactNode;
 }
 
-const FIELD = "w-full h-8 bg-transparent border-0 border-b border-border px-0 text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:border-b-2 focus:border-primary";
+const FIELD = "w-full h-8 bg-transparent border-0 border-b border-border px-0 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-b-2 focus:border-primary";
 
 /**
  * Mountain View's advanced search: Gmail's form under the search field, one
@@ -65,6 +65,7 @@ export function MvSearchForm({ filters, onChange, onSearch, onClear, folderSelec
             inputMode="numeric"
             className={FIELD}
             placeholder={t("size_min")}
+            aria-label={t("size_min")}
             value={filters.minSizeKb}
             onChange={(e) => onChange({ minSizeKb: e.target.value })}
           />
@@ -74,6 +75,7 @@ export function MvSearchForm({ filters, onChange, onSearch, onClear, folderSelec
             inputMode="numeric"
             className={FIELD}
             placeholder={t("size_max")}
+            aria-label={t("size_max")}
             value={filters.maxSizeKb}
             onChange={(e) => onChange({ maxSizeKb: e.target.value })}
           />

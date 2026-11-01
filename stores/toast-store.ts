@@ -3,6 +3,23 @@ import { Toast, ToastAction } from "@/components/ui/toast";
 import { generateUUID } from "@/lib/utils";
 import { toastHooks } from "@/lib/plugin-hooks";
 import { recordNotification } from "@/stores/notification-center-store";
+import { announce } from "@/lib/announce";
+import { effectiveToastDuration } from "@/lib/toast-duration";
+
+/**
+ * What a screen reader hears when a toast appears: its title and message as
+ * one sentence. The toast container is not a live region itself (its buttons
+ * would be read too, and errors need the assertive region).
+ */
+export function toastAnnouncement(toast: Pick<Toast, "title" | "message" | "srHint">): string {
+  const sentence = (a: string, b: string | undefined) => {
+    const next = b?.trim();
+    if (!next) return a;
+    if (!a) return next;
+    return /[.!?…:]$/.test(a) ? `${a} ${next}` : `${a}. ${next}`;
+  };
+  return sentence(sentence(toast.title.trim(), toast.message), toast.srHint);
+}
 
 interface ToastStore {
   toasts: Toast[];
@@ -25,12 +42,15 @@ export const useToastStore = create<ToastStore>((set, get) => ({
     const newToast: Toast = {
       ...toast,
       id,
-      duration: toast.duration ?? 5000,
+      // The "Notification duration" setting, for toasts with an action
+      // and errors (lib/toast-duration).
+      duration: effectiveToastDuration(toast),
     };
 
     set((state) => ({
       toasts: [...state.toasts, newToast],
     }));
+    announce(toastAnnouncement(newToast), { assertive: toast.type === "error" });
     void toastHooks.onToastShow.emit({
       id, type: toast.type, title: toast.title, message: toast.message ?? "",
     });
@@ -67,11 +87,12 @@ interface ToastOptions {
   tertiaryAction?: ToastAction;
   duration?: number;
   pauseOnHover?: boolean;
+  srHint?: string;
 }
 
-function showToast(type: Toast["type"], title: string, options?: string | ToastOptions, defaultDuration?: number): void {
+function showToast(type: Toast["type"], title: string, options?: string | ToastOptions, defaultDuration?: number): string {
   const opts = typeof options === "string" ? { message: options } : options;
-  useToastStore.getState().addToast({
+  return useToastStore.getState().addToast({
     type,
     title,
     message: opts?.message,
@@ -80,6 +101,7 @@ function showToast(type: Toast["type"], title: string, options?: string | ToastO
     tertiaryAction: opts?.tertiaryAction,
     duration: opts?.duration ?? defaultDuration,
     pauseOnHover: opts?.pauseOnHover,
+    srHint: opts?.srHint,
   });
 }
 

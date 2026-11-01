@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 
 @import "./theme-inline.css";
+@import "./accessibility.css";
 
 /* The app's font stack replaces Tailwind's default --font-sans, so the
    font-sans utility and body use the same stack, and a theme's
@@ -25,18 +26,18 @@
 
   --color-border: #e2e8f0;
   --color-input: #e2e8f0;
-  --color-ring: #94a3b8;
+  --color-ring: #2563eb;
   --color-background: #ffffff;
   --color-foreground: #0f172a;
-  --color-primary: #3b82f6;
+  --color-primary: #185aea;
   --color-primary-foreground: #ffffff;
   --color-secondary: #f8fafc;
   --color-secondary-foreground: #0f172a;
   --color-muted: #f1f5f9;
-  --color-muted-foreground: #64748b;
+  --color-muted-foreground: #59687c;
   --color-accent: #dbeafe;
   --color-accent-foreground: #1e40af;
-  --color-destructive: #ef4444;
+  --color-destructive: #dc2626;
   --color-destructive-foreground: #ffffff;
   --color-popover: #ffffff;
   --color-popover-foreground: #0f172a;
@@ -74,8 +75,10 @@
   --color-chart-4: #ef4444;
   --color-chart-5: #8b5cf6;
 
-  /* Settings variables */
-  --font-size-base: 16px;
+  /* Settings variables. The text size is a percentage of the browser's own
+     default, so the browser's font size setting still counts (EN 301 549
+     9.7); Settings > Accessibility multiplies it. */
+  --font-size-base: 100%;
   --list-item-height: 48px;
   --transition-duration: 0.2s;
 
@@ -109,11 +112,11 @@
   --color-secondary: #262626;
   --color-secondary-foreground: #fafafa;
   --color-muted: #262626;
-  --color-muted-foreground: #a3a3a3;
+  --color-muted-foreground: #adadad;
   --color-accent: #1e3a8a;
   --color-accent-foreground: #dbeafe;
   --color-destructive: #ef4444;
-  --color-destructive-foreground: #fafafa;
+  --color-destructive-foreground: #0a0a0a;
   --color-popover: #1c1c1c;
   --color-popover-foreground: #fafafa;
 
@@ -151,9 +154,42 @@
   --color-chart-5: #a78bfa;
 }
 
+/* A colour bar along an element's start edge: --start-bar is its colour,
+   --start-bar-width its width (3px). A thick border on a rounded element
+   curves on its inner side too; this bar is a background stripe, so only the
+   element's own outer corners round it and its inner edge stays straight.
+   It lies over the element's padding (and a transparent start border). */
+@utility start-bar {
+  background-image: linear-gradient(var(--start-bar), var(--start-bar));
+  background-origin: border-box;
+  background-position: left top;
+  background-repeat: no-repeat;
+  background-size: var(--start-bar-width, 3px) 100%;
 
-* {
-  border-color: var(--color-border);
+  &:dir(rtl) {
+    background-position: right top;
+  }
+}
+
+/* A tag lozenge's tint (KEYWORD_PALETTE fill): the hue at 10%, laid over the
+   page background rather than over whatever is behind the tag. A
+   see-through bg-amber-500/10 took on the row's colour, so on an unread,
+   selected or hovered row the tag text fell below 4.5:1. On the plain page
+   it looks the same as before. */
+@utility tag-fill-* {
+  --tag-fill: --alpha(--value(--color-*) / 10%);
+  background-color: var(--color-background);
+  background-image: linear-gradient(var(--tag-fill), var(--tag-fill));
+}
+
+
+/* The default border colour. In the base layer, so a border colour utility
+   (border-primary, border-transparent, border-destructive, border-input)
+   wins over it; unlayered, it outranked every utility and drew them grey. */
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
 }
 
 body {
@@ -228,22 +264,24 @@ optgroup {
   }
 }
 
-/* Minimalist scrollbar */
-::-webkit-scrollbar {
+/* Minimalist scrollbar, unless the user asked for the browser's own wider
+   one in Settings > Accessibility: Chromium draws its native scrollbar only
+   while no ::-webkit-scrollbar rule matches. */
+:root:not([data-native-scrollbars="on"]) ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
-::-webkit-scrollbar-track {
+:root:not([data-native-scrollbars="on"]) ::-webkit-scrollbar-track {
   background-color: transparent;
 }
 
-::-webkit-scrollbar-thumb {
+:root:not([data-native-scrollbars="on"]) ::-webkit-scrollbar-thumb {
   background-color: var(--color-border);
   border-radius: 9999px;
 }
 
-::-webkit-scrollbar-thumb:hover {
+:root:not([data-native-scrollbars="on"]) ::-webkit-scrollbar-thumb:hover {
   background-color: var(--color-muted-foreground);
 }
 
@@ -487,10 +525,10 @@ optgroup {
   opacity: 0.8;
 }
 
-/* Toast animations */
+/* Toast animations. They slide in from the end edge: --toast-slide is -1 in RTL. */
 @keyframes toast-enter {
   from {
-    transform: translateX(calc(100% + 1.25rem));
+    transform: translateX(calc((100% + 1.25rem) * var(--toast-slide, 1)));
     opacity: 0;
   }
   to {
@@ -505,7 +543,7 @@ optgroup {
     opacity: 1;
   }
   to {
-    transform: translateX(calc(100% + 1.25rem));
+    transform: translateX(calc((100% + 1.25rem) * var(--toast-slide, 1)));
     opacity: 0;
   }
 }
@@ -718,25 +756,34 @@ optgroup {
   animation: cal-slide-in-left 0.25s ease-out;
 }
 
-/* Reduced motion: respect user OS preference */
+/* Reduced motion: respect the OS preference unless the user turned Reduce
+   motion off in Settings > Accessibility. */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  :root:not([data-motion="full"]) *,
+  :root:not([data-motion="full"]) *::before,
+  :root:not([data-motion="full"]) *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    /* Every element transitions `all` by default once it has a duration.
+       Visibility is left out: a transition from hidden would keep a newly
+       shown menu or dialog hidden for a frame, and focus() would miss it.
+       So is the position: Chrome paints a transition's first frame at its
+       start value, and a menu placed from script flashed where it was
+       measured (a submenu in the window's top-left corner). */
+    transition-property: all, visibility, top, right, bottom, left !important;
+    transition-duration: 0.01ms, 0s, 0s, 0s, 0s, 0s !important;
     scroll-behavior: auto !important;
   }
 }
 
-/* The same when the user turns animations off in the settings (#1215). */
-[data-animations="off"] *,
-[data-animations="off"] *::before,
-[data-animations="off"] *::after {
+/* The same when the user turns Reduce motion on in the settings (#1215). */
+[data-motion="reduce"] *,
+[data-motion="reduce"] *::before,
+[data-motion="reduce"] *::after {
   animation-duration: 0.01ms !important;
   animation-iteration-count: 1 !important;
-  transition-duration: 0.01ms !important;
+  transition-property: all, visibility, top, right, bottom, left !important;
+  transition-duration: 0.01ms, 0s, 0s, 0s, 0s, 0s !important;
   scroll-behavior: auto !important;
 }
 
@@ -751,6 +798,11 @@ optgroup {
 /* TipTap Rich Text Editor */
 .tiptap {
   outline: none;
+}
+
+/* View-only quote decorations must survive a node view refreshing its inline styles. */
+.tiptap [data-reply-quote-collapsed] {
+  display: none !important;
 }
 
 .tiptap p {
@@ -931,36 +983,45 @@ optgroup {
 }
 
 /* Smooth halo applied to a setting row when the user clicks a sub-result in
-   the settings search. The element bg + a 10px box-shadow fill the row plus
-   a 10px ring of the same tint, then a 2px outline sits exactly at the outer
-   edge. Uses the primary theme color so it adapts to light/dark. */
+   the settings search. It is drawn by a pseudo-element behind the row's
+   content, so the row keeps its own shape and divider. It stays inside the
+   row's padding box vertically (never over the dividers above and below) and
+   reaches 10px past it sideways so the text isn't flush with its edge. Uses
+   the primary theme color so it adapts to light/dark. */
 @keyframes settings-search-pulse {
   0% {
     background-color: color-mix(in srgb, var(--color-primary) 0%, transparent);
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 0%, transparent);
-    outline-color: color-mix(in srgb, var(--color-primary) 0%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 0%, transparent);
   }
   30% {
     background-color: color-mix(in srgb, var(--color-primary) 12%, transparent);
-    box-shadow: 0 0 0 10px color-mix(in srgb, var(--color-primary) 12%, transparent);
-    outline-color: color-mix(in srgb, var(--color-primary) 60%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
   }
   100% {
     background-color: color-mix(in srgb, var(--color-primary) 0%, transparent);
-    box-shadow: 0 0 0 10px color-mix(in srgb, var(--color-primary) 0%, transparent);
-    outline-color: color-mix(in srgb, var(--color-primary) 0%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 0%, transparent);
   }
 }
 
 .settings-search-highlight {
-  outline: 2px solid transparent;
-  outline-offset: 10px;
+  position: relative;
+  isolation: isolate;
+}
+
+.settings-search-highlight::before {
+  content: "";
+  position: absolute;
+  inset: 0 -10px;
+  z-index: -1;
+  border: 1px solid transparent;
   border-radius: 8px;
+  pointer-events: none;
   animation: settings-search-pulse 1.6s ease-in-out forwards;
 }
 
 /* RTL: mirror directional icons (chevrons/arrows) so prev/next, back/forward,
-   and panel-collapse affordances point the correct way in right-to-left layouts.
+   reply/forward and panel-collapse affordances point the correct way in
+   right-to-left layouts.
    Tabler emits a `tabler-icon-<name>` class per icon, so we target the
    directional ones only — vertical chevrons (up/down) are intentionally left. */
 [dir="rtl"] .tabler-icon-chevron-left,
@@ -971,6 +1032,10 @@ optgroup {
 [dir="rtl"] .tabler-icon-arrow-right,
 [dir="rtl"] .tabler-icon-arrow-big-left,
 [dir="rtl"] .tabler-icon-arrow-big-right,
+[dir="rtl"] .tabler-icon-arrow-back-up,
+[dir="rtl"] .tabler-icon-arrow-back-up-double,
+[dir="rtl"] .tabler-icon-arrow-forward-up,
+[dir="rtl"] .tabler-icon-arrow-forward-up-double,
 [dir="rtl"] .tabler-icon-layout-sidebar-left,
 [dir="rtl"] .tabler-icon-layout-sidebar-right {
   transform: scaleX(-1);
@@ -1049,12 +1114,12 @@ optgroup {
   padding-inline-end: 5.5rem;
 }
 
-[data-interface-layout="mountain-view"] .mv-topbar-search > div > form > button {
+[data-interface-layout="mountain-view"] .mv-topbar-search > div > form > div > div {
   inset-inline-end: 3.25rem;
 }
 
 /* The magnifier sits on the field's baseline grid, one 48px hit area in. */
-[data-interface-layout="mountain-view"] .mv-topbar-search > div > form > svg {
+[data-interface-layout="mountain-view"] .mv-topbar-search > div > form > div > svg {
   inset-inline-start: 1rem;
   width: 1.25rem;
   height: 1.25rem;

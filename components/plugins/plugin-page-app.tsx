@@ -8,6 +8,7 @@ import { useAuthStore, redirectToLogin, saveRedirectAfterLogin } from "@/stores/
 import { useEmailStore } from "@/stores/email-store";
 import { usePluginStore } from "@/stores/plugin-store";
 import { NavigationRail } from "@/components/layout/navigation-rail";
+import { PhoneAppHeader } from "@/components/layout/phone-header-actions";
 import { SidebarAppsModal } from "@/components/layout/sidebar-apps-modal";
 import { InlineAppView } from "@/components/layout/inline-app-view";
 import { MvTopBar } from "@/components/layout/mv-top-bar";
@@ -59,6 +60,11 @@ export function PluginPageApp({ linkSegments = [] }: PluginPageAppProps) {
     () => offersForSlot("app-page").some((o) => o.pluginId === pluginId),
     () => false,
   );
+  const fillsPage = useSyncExternalStore(
+    subscribeSlots,
+    () => offersForSlot("app-page").some((o) => o.pluginId === pluginId && o.fill),
+    () => false,
+  );
   useDocumentTitle(page?.title ?? null);
 
   useEffect(() => {
@@ -91,8 +97,8 @@ export function PluginPageApp({ linkSegments = [] }: PluginPageAppProps) {
   let content: React.ReactNode;
   if (available) {
     content = (
-      <div className="flex-1 min-h-0 overflow-y-auto" data-plugin-page={`${pluginId}/${pageId}`}>
-        <PluginIframeSlot key={`${pluginId}/${pageId}`} pluginId={pluginId} slot="app-page" extraProps={extraProps} />
+      <div className={cn("flex-1 min-h-0", fillsPage ? "flex flex-col overflow-hidden" : "overflow-y-auto")} data-plugin-page={`${pluginId}/${pageId}`}>
+        <PluginIframeSlot key={`${pluginId}/${pageId}`} pluginId={pluginId} slot="app-page" extraProps={extraProps} fill={fillsPage} />
       </div>
     );
   } else if (!pluginsReady) {
@@ -144,6 +150,7 @@ export function PluginPageApp({ linkSegments = [] }: PluginPageAppProps) {
           </div>
         )}
         <div className="flex flex-col flex-1 min-w-0">
+          {!isEmbedded && <PhoneAppHeader title={page?.title ?? ""} below="md" />}
           {inlineApp && <InlineAppView apps={loadedApps} activeAppId={inlineApp.id} onClose={closeInlineApp} />}
           <div className={cn("flex flex-col flex-1 min-h-0", inlineApp && "hidden")}>
             {content}

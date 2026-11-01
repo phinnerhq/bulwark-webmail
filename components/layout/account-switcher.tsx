@@ -9,13 +9,17 @@ import { useAccountStore, type AccountEntry } from "@/stores/account-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { useEmailStore } from "@/stores/email-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import { getMaxAccounts, sortDefaultFirst, reorderNonDefaultIds } from "@/lib/account-utils";
+import { HelpMenuItems } from "@/components/layout/help-links";
+import { getMaxAccounts, sortDefaultFirst, reorderNonDefaultIds, accountRowText } from "@/lib/account-utils";
 import { inboxUnread, totalInboxUnread } from "@/lib/account-inbox-unread";
 import { isDocumentRTL } from "@/i18n/direction";
 import { cn, formatFileSize } from "@/lib/utils";
 import { useRouter } from "@/i18n/navigation";
 import { Avatar } from "@/components/ui/avatar";
 import { useMenuNavigation } from "@/hooks/use-menu-navigation";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { IconButton } from "@/components/ui/icon-button";
 import { toUnicodeDomain, toUnicodeEmail } from "@/lib/idn";
 
 interface AccountSwitcherProps {
@@ -103,6 +107,7 @@ export function AccountSwitcher({
   const logout = useAuthStore((s) => s.logout);
   const removeAccount = useAuthStore((s) => s.removeAccount);
   const logoutAll = useAuthStore((s) => s.logoutAll);
+  const { dialogProps: confirmDialogProps, confirm } = useConfirmDialog();
 
   const updatePosition = useCallback(() => {
     if (!buttonRef.current) return;
@@ -190,11 +195,18 @@ export function AccountSwitcher({
     router.push(`/login?mode=add-account` as never);
   };
 
-  const handleRemove = (e: React.MouseEvent, account: AccountEntry) => {
+  const handleRemove = async (e: React.MouseEvent, account: AccountEntry) => {
     e.stopPropagation();
     const label = toUnicodeEmail(account.email || account.username);
-    if (!window.confirm(t("remove_account_confirm", { account: label }))) return;
-    removeAccount(account.id);
+    // The popover closes first: the dialog is the only thing asking now.
+    setOpen(false);
+    const ok = await confirm({
+      title: t("remove_account_title"),
+      message: t("remove_account_confirm", { account: label }),
+      confirmText: t("remove_account"),
+      variant: "destructive",
+    });
+    if (ok) removeAccount(account.id);
   };
 
   const handleLogout = () => {
@@ -228,6 +240,20 @@ export function AccountSwitcher({
     e.dataTransfer.dropEffect = "move";
     if (overId !== dragOverId) setDragOverId(overId);
   };
+  // Alt+Shift+↑ / ↓ on an account moves it, as dragging does (WCAG 2.1.1);
+  // Settings > Accounts has Move up / Move down buttons for the same order.
+  const handleMoveKey = (e: React.KeyboardEvent, accountId: string) => {
+    if (!e.altKey || !e.shiftKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+    const movable = displayAccounts.filter((a) => !a.isDefault);
+    const index = movable.findIndex((a) => a.id === accountId);
+    const other = movable[index + (e.key === "ArrowUp" ? -1 : 1)];
+    if (index < 0 || !other) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const next = reorderNonDefaultIds(accounts, accountId, other.id);
+    if (next) reorderAccounts(next);
+  };
+
   const handleDrop = (e: React.DragEvent, overId: string) => {
     e.preventDefault();
     if (dragId) {
@@ -241,7 +267,10 @@ export function AccountSwitcher({
   // primaryIdentity can be an alias (e.g. info@korazo.net) that differs from
   // the actually logged-in account (info@linusrath.de).
   // IDN domains arrive in their ASCII (xn--) form; show them as written (#1100).
-  const displayName = toUnicodeEmail(activeAccount?.displayName || activeAccount?.label || "");
+  // A name another account shares gives way to the address (accountRowText).
+  const activeText = activeAccount ? accountRowText(activeAccount, accounts) : null;
+  const displayName = toUnicodeEmail(activeText?.title || "");
+  const displaySubtitle = toUnicodeEmail(activeText?.subtitle || "");
   const displayEmail = toUnicodeEmail(activeAccount?.email || activeAccount?.username || "");
 
   // Mountain View leads its popover with the account you are already in - large avatar,
@@ -273,11 +302,11 @@ export function AccountSwitcher({
           "flex items-center gap-2 transition-colors",
           mvPopover ? "rounded-full" : "rounded-md",
           variant !== "expanded"
-            ? "justify-center w-10 h-10 hover:bg-muted"
+            ? "justify-center w-10 h-10 pointer-coarse:w-11 pointer-coarse:h-11 hover:bg-muted"
             : "w-full px-2 py-1.5 hover:bg-muted text-start min-w-0",
           className
         )}
-        title={variant !== "expanded" ? (displayName || displayEmail) : undefined}
+        title={variant !== "expanded" ? displayName : undefined}
         aria-label={t("switch_account")}
         aria-expanded={open}
         aria-haspopup="menu"
@@ -290,7 +319,7 @@ export function AccountSwitcher({
               <>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-foreground truncate">{displayName}</p>
-                  <p className="text-xs text-muted-foreground truncate">{displayEmail}</p>
+                  {displaySubtitle && <p className="text-xs text-muted-foreground truncate">{displaySubtitle}</p>}
                 </div>
                 <ChevronDown className={cn("w-3.5 h-3.5 text-muted-foreground flex-shrink-0 transition-transform", open && "rotate-180")} />
               </>
@@ -341,8 +370,8 @@ export function AccountSwitcher({
             <div className="flex items-center gap-4 rounded-t-3xl bg-background px-4 pt-4 pb-3" data-mv-account-current="">
               <AccountAvatar account={activeAccount} size="xl" />
               <div className="min-w-0 flex-1">
-                <p className="text-lg leading-6 truncate">{displayName || displayEmail}</p>
-                {displayName && <p className="text-sm text-muted-foreground truncate">{displayEmail}</p>}
+                <p className="text-lg leading-6 truncate">{displayName}</p>
+                {displaySubtitle && <p className="text-sm text-muted-foreground truncate">{displaySubtitle}</p>}
               </div>
             </div>
           )}
@@ -381,6 +410,7 @@ export function AccountSwitcher({
             {listedAccounts.map((account) => {
               const isActive = account.id === activeAccountId;
               const isDraggable = !account.isDefault && accounts.length > 2;
+              const text = accountRowText(account, accounts);
               return (
                 <div
                   key={account.id}
@@ -397,13 +427,15 @@ export function AccountSwitcher({
                 >
                 <button
                   onClick={() => handleSwitch(account.id)}
+                  onKeyDown={isDraggable ? (e) => handleMoveKey(e, account.id) : undefined}
+                  aria-keyshortcuts={isDraggable ? "Alt+Shift+ArrowUp Alt+Shift+ArrowDown" : undefined}
                   data-testid="account-option"
                   data-account-id={account.id}
                   data-account-email={account.email || account.username}
                   className={cn(
                     "w-full flex items-start gap-3 px-3 py-2.5 text-start transition-colors",
                     isActive ? "bg-accent/50" : "hover:bg-muted",
-                    (!isActive && !account.isDefault) ? (isDraggable ? "pe-14" : "pe-8") : (isDraggable && "pe-7")
+                    (!isActive && !account.isDefault) ? (isDraggable ? "pe-16" : "pe-10") : (isDraggable && "pe-7")
                   )}
                   role="menuitem"
                   disabled={isActive}
@@ -411,7 +443,7 @@ export function AccountSwitcher({
                   <div className="relative flex-shrink-0">
                     <AccountAvatar account={account} size="md" />
                     {isActive && (
-                      <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-primary flex items-center justify-center">
+                      <div className="absolute -bottom-0.5 -end-0.5 w-4 h-4 rounded-full bg-primary flex items-center justify-center">
                         <Check className="w-2.5 h-2.5 text-primary-foreground" />
                       </div>
                     )}
@@ -419,16 +451,18 @@ export function AccountSwitcher({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1">
                       <span className="text-sm font-medium truncate">
-                        {toUnicodeEmail(account.displayName || account.label)}
+                        {toUnicodeEmail(text.title)}
                       </span>
                       {account.isDefault && (
                         <Star className="w-3 h-3 text-amber-500 flex-shrink-0 fill-amber-500" />
                       )}
                       <UnreadBadge count={unreadFor(account)} />
                     </div>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {toUnicodeEmail(account.email || account.username)}
-                    </p>
+                    {text.subtitle && (
+                      <p className="text-xs text-muted-foreground truncate">
+                        {toUnicodeEmail(text.subtitle)}
+                      </p>
+                    )}
                     {/* Server and connection state: Mountain View keeps the line
                         only for an account in trouble. */}
                     <div className={cn("flex items-center gap-1 mt-0.5", mvPopover && !account.hasError && "hidden")}>
@@ -440,7 +474,7 @@ export function AccountSwitcher({
                           account.isConnected ? "bg-green-500" : "bg-muted-foreground/40"
                         )} />
                       )}
-                      <span className="text-[10px] text-muted-foreground truncate">
+                      <span className="text-[0.625rem] text-muted-foreground truncate">
                         {(() => { try { return toUnicodeDomain(new URL(account.serverUrl).hostname); } catch { return account.serverUrl; } })()}
                       </span>
                     </div>
@@ -449,22 +483,24 @@ export function AccountSwitcher({
                 {isDraggable && (
                   <span
                     aria-hidden
-                    className="pointer-events-none absolute end-7 top-1/2 -translate-y-1/2 text-muted-foreground/50 opacity-0 transition-opacity group-hover/acct:opacity-100"
+                    className={cn(
+                      "pointer-events-none absolute top-1/2 -translate-y-1/2 text-muted-foreground/50 opacity-0 transition-opacity group-hover/acct:opacity-100",
+                      !isActive && !account.isDefault ? "end-10" : "end-1.5"
+                    )}
                   >
                     <GripVertical className="w-4 h-4" />
                   </span>
                 )}
                 {!isActive && !account.isDefault && (
-                  <button
-                    type="button"
-                    onClick={(e) => handleRemove(e, account)}
+                  // Shown on hover and focus, and always on a touch screen (R7).
+                  <IconButton
+                    onClick={(e) => void handleRemove(e, account)}
                     role="menuitem"
-                    aria-label={t("remove_account")}
-                    title={t("remove_account")}
-                    className="absolute end-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-muted-foreground/60 opacity-0 transition-opacity group-hover/acct:opacity-100 hover:bg-destructive/10 hover:text-destructive focus:opacity-100 focus:outline-none focus:ring-1 focus:ring-destructive"
+                    label={t("remove_account")}
+                    className="absolute end-1.5 top-1/2 -translate-y-1/2 text-muted-foreground opacity-0 transition-opacity group-hover/acct:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 hover:bg-destructive/10 hover:text-destructive"
                   >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+                    <X />
+                  </IconButton>
                 )}
                 </div>
               );
@@ -535,6 +571,12 @@ export function AccountSwitcher({
                   })}
                 </div>
               )}
+              <HelpMenuItems
+                onSelect={() => setOpen(false)}
+                className="mt-2 rounded-3xl bg-background py-1"
+                itemClassName="w-full flex items-center gap-4 px-5 py-3 text-sm text-start hover:bg-muted transition-colors"
+                iconClassName="w-5 h-5 shrink-0 text-muted-foreground"
+              />
             </>
           )}
 
@@ -544,7 +586,7 @@ export function AccountSwitcher({
               <button
                 onClick={handleAddAccount}
                 data-testid="add-account"
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors"
+                className="w-full flex items-center gap-2 px-3 py-2 pointer-coarse:min-h-11 text-sm text-start text-foreground hover:bg-muted transition-colors"
                 role="menuitem"
               >
                 <Plus className="w-4 h-4" />
@@ -553,13 +595,22 @@ export function AccountSwitcher({
             </div>
           )}
 
+          {/* Accessibility and help links the operator set (lib/help-links.ts). */}
+          {!mvPopover && (
+            <HelpMenuItems
+              onSelect={() => setOpen(false)}
+              className="border-t border-border py-1"
+              itemClassName="w-full flex items-center gap-2 px-3 py-2 pointer-coarse:min-h-11 text-sm text-start text-foreground hover:bg-muted transition-colors"
+            />
+          )}
+
           {/* Separator + Actions. Under Mountain View a single login signs out
               from the pill above, so these rows are only for picking among several. */}
           <div className={cn("border-t border-border", mvPopover && "hidden")}>
             {activeAccount && !activeAccount.isDefault && accounts.length > 1 && (
               <button
                 onClick={() => handleSetDefault(activeAccount.id)}
-                className={cn("w-full flex items-center gap-2 py-2 text-sm text-foreground hover:bg-muted transition-colors", mvPopover ? "px-4" : "px-3")}
+                className={cn("w-full flex items-center gap-2 py-2 pointer-coarse:min-h-11 text-sm text-start text-foreground hover:bg-muted transition-colors", mvPopover ? "px-4" : "px-3")}
                 role="menuitem"
               >
                 <Star className="w-4 h-4" />
@@ -568,7 +619,7 @@ export function AccountSwitcher({
             )}
             <button
               onClick={handleLogout}
-              className={cn("w-full flex items-center gap-2 py-2 text-sm text-foreground hover:bg-muted transition-colors", mvPopover ? "px-4" : "px-3")}
+              className={cn("w-full flex items-center gap-2 py-2 pointer-coarse:min-h-11 text-sm text-start text-foreground hover:bg-muted transition-colors", mvPopover ? "px-4" : "px-3")}
               role="menuitem"
             >
               <LogOut className="w-4 h-4" />
@@ -577,7 +628,7 @@ export function AccountSwitcher({
             {!mvPopover && accounts.length > 1 && (
               <button
                 onClick={handleLogoutAll}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-muted transition-colors"
+                className="w-full flex items-center gap-2 px-3 py-2 pointer-coarse:min-h-11 text-sm text-start text-foreground hover:bg-muted transition-colors"
                 role="menuitem"
               >
                 <LogOut className="w-4 h-4" />
@@ -588,6 +639,7 @@ export function AccountSwitcher({
         </div>,
         document.body
       )}
+      <ConfirmDialog {...confirmDialogProps} />
     </>
   );
 }

@@ -5,11 +5,14 @@ import { useTranslations } from "next-intl";
 import {
   Menu, ChevronRight, Search, X, ArrowUpDown, Check, LayoutGrid, LayoutList,
   PanelRight, Download, Trash2, Scissors, Copy, Pencil, Share2, Clipboard,
-  MoreHorizontal, FolderOpen, Folder, ArrowUp, ArrowDown, RefreshCw,
+  MoreHorizontal, FolderOpen, Folder, ArrowUp, ArrowDown, RefreshCw, RotateCcw, FolderInput,
 } from "@/components/icons";
-import { Button } from "@/components/ui/button";
+import { Button, TOUCH_HIT_AREA } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { ToolbarButton, ToolbarSearch, TOOLBAR_ACTIVE } from "@/components/ui/toolbar";
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu";
 import { useContextMenu } from "@/hooks/use-context-menu";
+import { PhoneHeaderActions } from "@/components/layout/phone-header-actions";
 import { cn } from "@/lib/utils";
 import { anchorEvent, isInternalDrag, readDraggedNames } from "@/components/files/file-item-parts";
 import { PluginActions } from "@/components/plugins/plugin-actions";
@@ -37,6 +40,8 @@ interface SelectionActions {
   onDownload: () => void;
   onShare: () => void;
   onRename: () => void;
+  /** Move to… a folder picked from the tree; undefined where items can't move. */
+  onMoveTo?: () => void;
   onCut: () => void;
   onCopy: () => void;
   onDelete: () => void;
@@ -45,6 +50,9 @@ interface SelectionActions {
   pluginFiles: FileResourceView[];
   /** The one selected item's type, so plugins can offer type-specific actions; undefined for several. */
   pluginMimeType?: string;
+  /** Items in the trash: Restore and Delete permanently, nothing else. */
+  trash?: boolean;
+  onRestore?: () => void;
 }
 
 interface FilesHeaderProps {
@@ -74,6 +82,8 @@ interface FilesHeaderProps {
   /** Hide the tools that only apply to a folder listing (Pro account picker). */
   toolsHidden?: boolean;
   selection: SelectionActions | null;
+  /** In the trash: the Empty trash button. */
+  emptyTrash?: { onEmpty: () => void; disabled: boolean };
 }
 
 const MAX_VISIBLE_CRUMBS = 3;
@@ -103,6 +113,7 @@ export function FilesHeader({
   compact,
   toolsHidden,
   selection,
+  emptyTrash,
 }: FilesHeaderProps) {
   const t = useTranslations("files");
   const sortMenu = useContextMenu<null>();
@@ -110,38 +121,52 @@ export function FilesHeader({
   const [searchOpen, setSearchOpen] = useState(false);
   const [dropCrumb, setDropCrumb] = useState<string | null>(null);
 
-  const headerClass = "flex items-center gap-1 px-3 border-b border-border min-w-0 flex-shrink-0";
-  const headerStyle = { paddingBlock: "var(--density-header-py)" };
+  const headerClass = "flex items-center gap-1 px-3 h-14 box-content border-b border-border min-w-0 flex-shrink-0";
 
   if (selection) {
     return (
-      <div role="toolbar" aria-label={t("selection_actions")} className={cn(headerClass, "bg-accent/40")} style={headerStyle}>
-        <Button variant="ghost" size="icon" className="h-8 w-8 -ms-1" onClick={selection.onClear} aria-label={t("clear_selection")} title={t("clear_selection")}>
-          <X className="w-4 h-4" />
-        </Button>
+      <div role="toolbar" aria-label={t("selection_actions")} className={cn(headerClass, "bg-accent/40")}>
+        <IconButton label={t("clear_selection")} onClick={selection.onClear}>
+          <X />
+        </IconButton>
         <span className="text-sm font-medium me-2 whitespace-nowrap" aria-live="polite">
           {t("selected_count", { count: selection.count })}
         </span>
         <div className="flex items-center gap-0.5 min-w-0 overflow-x-auto">
+          {selection.trash ? (
+            <>
+              {selection.onRestore && (
+                <ToolButton icon={RotateCcw} label={t("restore")} onClick={selection.onRestore} compact />
+              )}
+              <ToolButton icon={Trash2} label={t("delete_forever")} onClick={selection.onDelete} compact destructive />
+            </>
+          ) : (
+          <>
+          {/* All icons with a tooltip, as in Mail's selection bar: one kind of button. */}
           {selection.canOpen && (
-            <ToolButton icon={FolderOpen} label={t("open")} onClick={selection.onOpen} compact={compact} />
+            <ToolButton icon={FolderOpen} label={t("open")} onClick={selection.onOpen} compact />
           )}
           {selection.fileCount > 0 && (
-            <ToolButton icon={Download} label={t("download")} onClick={selection.onDownload} compact={compact} />
+            <ToolButton icon={Download} label={t("download")} onClick={selection.onDownload} compact />
           )}
           {selection.canShare && (
-            <ToolButton icon={Share2} label={t("share")} onClick={selection.onShare} compact={compact} />
+            <ToolButton icon={Share2} label={t("share")} onClick={selection.onShare} compact />
           )}
           {selection.canRename && (
             <ToolButton icon={Pencil} label={t("rename")} onClick={selection.onRename} compact />
+          )}
+          {selection.onMoveTo && (
+            <ToolButton icon={FolderInput} label={t("move_to")} onClick={selection.onMoveTo} compact />
           )}
           <ToolButton icon={Scissors} label={t("cut")} onClick={selection.onCut} compact />
           <ToolButton icon={Copy} label={t("copy")} onClick={selection.onCopy} compact />
           <ToolButton icon={Trash2} label={t("delete")} onClick={selection.onDelete} compact destructive />
           {!compact && <SelectionPluginActions files={selection.pluginFiles} mimeType={selection.pluginMimeType} />}
+          </>
+          )}
         </div>
         {/* Outside the scrolling row, so the "more" button never scrolls out of sight. */}
-        {compact && <SelectionPluginActions files={selection.pluginFiles} mimeType={selection.pluginMimeType} overflow />}
+        {compact && !selection.trash && <SelectionPluginActions files={selection.pluginFiles} mimeType={selection.pluginMimeType} overflow />}
         <div className="flex-1" />
         <DetailsToggle showDetails={showDetails} onToggle={onToggleDetails} label={t("details")} />
       </div>
@@ -172,7 +197,7 @@ export function FilesHeader({
     const isLast = crumb === crumbs[crumbs.length - 1];
     return (
       <li key={`${crumb.id ?? "root"}:${crumb.path}`} className="flex items-center min-w-0 shrink-0 last:shrink">
-        {index > 0 && <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0 rtl:rotate-180" aria-hidden />}
+        {index > 0 && <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" aria-hidden />}
         <button
           type="button"
           onClick={() => onNavigateCrumb(crumb)}
@@ -191,60 +216,49 @@ export function FilesHeader({
   };
 
   const searchField = (
-    <div className={cn("relative", compact ? "flex-1" : "w-56")}>
-      <Search className="absolute start-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-      <input
-        ref={searchInputRef}
-        type="search"
-        role="searchbox"
-        aria-label={t("search_placeholder")}
-        value={searchQuery}
-        onChange={(e) => onSearchChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            onSearchChange("");
-            if (compact) setSearchOpen(false);
-            (e.target as HTMLInputElement).blur();
-          }
-        }}
-        placeholder={t("search_placeholder")}
-        autoFocus={compact}
-        className="w-full h-8 rounded-md border border-input bg-background ps-8 pe-8 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-search-cancel-button]:hidden"
-      />
-      {(searchQuery || compact) && (
-        <button
-          type="button"
-          onClick={() => { onSearchChange(""); if (compact) setSearchOpen(false); }}
-          className="absolute end-1.5 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-muted text-muted-foreground"
-          aria-label={t("clear_search")}
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
-      )}
-    </div>
+    <ToolbarSearch
+      ref={searchInputRef}
+      className={compact ? "flex-1" : "w-56"}
+      role="searchbox"
+      aria-label={t("search_placeholder")}
+      placeholder={t("search_placeholder")}
+      autoComplete="off"
+      shortcut="/"
+      value={searchQuery}
+      onChange={(e) => onSearchChange(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          onSearchChange("");
+          if (compact) setSearchOpen(false);
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+      autoFocus={compact}
+      onClear={() => { onSearchChange(""); if (compact) setSearchOpen(false); }}
+      clearLabel={t("clear_search")}
+      alwaysShowClear={compact}
+    />
   );
+
 
   if (compact && searchOpen && !toolsHidden) {
     return (
-      <div className={headerClass} style={headerStyle}>
+      <div className={headerClass}>
         {searchField}
       </div>
     );
   }
 
   return (
-    <div role="toolbar" aria-label={t("toolbar")} className={headerClass} style={headerStyle}>
+    <div role="toolbar" aria-label={t("toolbar")} className={headerClass}>
       {onMenuClick && (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 -ms-1 shrink-0"
+        <ToolbarButton
+          label={t("open_folder_tree")}
           onClick={onMenuClick}
-          aria-label={t("open_folder_tree")}
           aria-expanded={menuOpen}
         >
-          <Menu className="w-4 h-4" />
-        </Button>
+          <Menu />
+        </ToolbarButton>
       )}
 
       <nav aria-label={t("breadcrumbs")} className="flex-1 min-w-0">
@@ -252,7 +266,7 @@ export function FilesHeader({
           {visible.slice(0, 1).map((c) => renderCrumb(c, 0))}
           {accountLabel && (
             <li className="flex items-center min-w-0 shrink-0">
-              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0 rtl:rotate-180" aria-hidden />
+              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" aria-hidden />
               <button
                 type="button"
                 onClick={onNavigateAccountRoot}
@@ -264,7 +278,7 @@ export function FilesHeader({
           )}
           {hidden.length > 0 && (
             <li className="flex items-center shrink-0">
-              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0 rtl:rotate-180" aria-hidden />
+              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" aria-hidden />
               <button
                 type="button"
                 className="px-1.5 py-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
@@ -282,23 +296,33 @@ export function FilesHeader({
 
       {!toolsHidden && (
         <div className="flex items-center gap-1 shrink-0">
+          {emptyTrash && (
+            <Button
+              variant="outline"
+              size="xs"
+              className="gap-1.5 text-destructive hover:text-destructive"
+              onClick={emptyTrash.onEmpty}
+              disabled={emptyTrash.disabled}
+              title={t("empty_trash")}
+            >
+              <Trash2 className="w-4 h-4" />
+              <span className={cn(compact && "sr-only")}>{t("empty_trash")}</span>
+            </Button>
+          )}
           {clipboardCount > 0 && (
-            <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={onPaste} title={t("paste_here")}>
+            <Button variant="outline" size="xs" className="gap-1.5" onClick={onPaste} title={t("paste_here")}>
               <Clipboard className="w-4 h-4" />
               <span className={cn(compact && "sr-only")}>{t("paste_count", { count: clipboardCount })}</span>
             </Button>
           )}
           {compact ? (
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSearchOpen(true)} aria-label={t("search_placeholder")}>
-              <Search className="w-4 h-4" />
-            </Button>
+            <ToolbarButton label={t("search_placeholder")} onClick={() => setSearchOpen(true)}>
+              <Search />
+            </ToolbarButton>
           ) : searchField}
-          <Button
-            variant="ghost"
-            size="icon"
-            className={cn("h-8 w-8", sortMenu.contextMenu.isOpen && "bg-accent")}
-            aria-label={t("sort_by")}
-            title={t("sort_by")}
+          <ToolbarButton
+            label={t("sort_by")}
+            active={sortMenu.contextMenu.isOpen}
             aria-haspopup="menu"
             aria-expanded={sortMenu.contextMenu.isOpen}
             onMouseDown={(e) => { if (sortMenu.contextMenu.isOpen) e.stopPropagation(); }}
@@ -307,9 +331,9 @@ export function FilesHeader({
               else sortMenu.openContextMenu(anchorEvent(e.currentTarget, "end"), null);
             }}
           >
-            <ArrowUpDown className="w-4 h-4" />
-          </Button>
-          <div className="flex items-center rounded-md border border-border p-0.5" role="radiogroup" aria-label={t("view_mode")}>
+            <ArrowUpDown />
+          </ToolbarButton>
+          <div className="flex items-center h-8 rounded-md border border-input p-0.5 shrink-0" role="radiogroup" aria-label={t("view_mode")}>
             {([["list", LayoutList, t("list_view")], ["grid", LayoutGrid, t("grid_view")]] as const).map(([mode, Icon, label]) => (
               <button
                 key={mode}
@@ -320,8 +344,10 @@ export function FilesHeader({
                 title={label}
                 onClick={() => onViewModeChange(mode)}
                 className={cn(
-                  "h-6 w-7 flex items-center justify-center rounded transition-colors",
-                  viewMode === mode ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground",
+                  "h-full w-7 flex items-center justify-center rounded transition-colors",
+                  // A 44px hit area on touch, as every Button has (R1).
+                  TOUCH_HIT_AREA,
+                  viewMode === mode ? TOOLBAR_ACTIVE : "text-muted-foreground hover:text-foreground hover:bg-muted",
                 )}
               >
                 <Icon className="w-4 h-4" />
@@ -329,11 +355,18 @@ export function FilesHeader({
             ))}
           </div>
           {!compact && (
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onRefresh} disabled={isLoading} aria-label={t("refresh")} title={t("refresh")}>
-              <RefreshCw className={cn("w-4 h-4", isLoading && "animate-spin")} />
-            </Button>
+            <ToolbarButton label={t("refresh")} onClick={onRefresh} disabled={isLoading}>
+              <RefreshCw className={cn(isLoading && "animate-spin [animation-direction:reverse]")} />
+            </ToolbarButton>
           )}
           <DetailsToggle showDetails={showDetails} onToggle={onToggleDetails} label={t("details")} />
+          <PhoneHeaderActions
+            below="md"
+            menuItems={(close) => (
+              // The phone header has no room for Refresh as a button.
+              <ContextMenuItem icon={RefreshCw} label={t("refresh")} onClick={() => { close(); onRefresh(); }} disabled={isLoading} />
+            )}
+          />
         </div>
       )}
 
@@ -385,8 +418,8 @@ function ToolButton({ icon: Icon, label, onClick, compact, destructive }: {
   return (
     <Button
       variant="ghost"
-      size={compact ? "icon" : "sm"}
-      className={cn("h-8 shrink-0", compact ? "w-8" : "gap-1.5 px-2.5", destructive && "text-destructive hover:text-destructive hover:bg-destructive/10")}
+      size={compact ? "icon-sm" : "xs"}
+      className={cn("shrink-0", !compact && "gap-1.5", destructive && "text-destructive hover:text-destructive hover:bg-destructive/10")}
       onClick={onClick}
       aria-label={label}
       title={label}
@@ -399,17 +432,9 @@ function ToolButton({ icon: Icon, label, onClick, compact, destructive }: {
 
 function DetailsToggle({ showDetails, onToggle, label }: { showDetails: boolean; onToggle: () => void; label: string }) {
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      className={cn("h-8 w-8 shrink-0", showDetails && "bg-accent text-accent-foreground")}
-      onClick={onToggle}
-      aria-label={label}
-      aria-pressed={showDetails}
-      title={label}
-    >
-      <PanelRight className="w-4 h-4" />
-    </Button>
+    <ToolbarButton label={label} active={showDetails} onClick={onToggle} aria-pressed={showDetails}>
+      <PanelRight />
+    </ToolbarButton>
   );
 }
 

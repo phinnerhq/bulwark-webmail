@@ -412,6 +412,31 @@ describe('getInvitationTrustAssessment', () => {
     expect(result.reason).toBe('authentication_failed');
   });
 
+  it('trusts an invitation a relay broke SPF for when DKIM and DMARC still pass (#1403)', () => {
+    const event: Partial<CalendarEvent> = {
+      participants: {
+        org: makeParticipant({ roles: { owner: true }, email: 'alice@example.com' }),
+      },
+    };
+    const from = [{ email: 'alice@example.com' }];
+
+    const relayed = getInvitationTrustAssessment(event, makeEmail({
+      from,
+      authenticationResults: {
+        spf: { result: 'fail', domain: 'example.com' },
+        dkim: { result: 'pass', domain: 'example.com' },
+        dmarc: { result: 'pass', domain: 'example.com' },
+      },
+    }), 'request');
+    expect(relayed.level).toBe('trusted');
+
+    const unsigned = getInvitationTrustAssessment(event, makeEmail({
+      from,
+      authenticationResults: { spf: { result: 'fail', domain: 'example.com' } },
+    }), 'request');
+    expect(unsigned.reason).toBe('authentication_failed');
+  });
+
   it('warns when sender and organizer differ without verified authentication', () => {
     const event: Partial<CalendarEvent> = {
       participants: {
@@ -478,6 +503,28 @@ describe('getInvitationTrustAssessment', () => {
     expect(result.reason).toBeNull();
   });
 
+  // A reply comes from the attendee, and the organizer is the user reading
+  // it: comparing with the organizer warned on every genuine reply, and a
+  // forged one looked just the same.
+  it.each(['reply', 'counter', 'refresh'] as const)('compares the sender of a %s with the attendee who answers', (method) => {
+    const event: Partial<CalendarEvent> = {
+      participants: {
+        // As Stalwart parses it: the organizer is an attendee too, addresses as mailto:.
+        org: makeParticipant({ roles: { owner: true, attendee: true }, email: undefined, calendarAddress: 'mailto:me@example.com', participationStatus: 'accepted' }),
+        bob: makeParticipant({ roles: { attendee: true }, email: undefined, calendarAddress: 'mailto:Bob@example.net', participationStatus: 'accepted' }),
+      },
+    };
+    const aligned = { dkim: { result: 'pass', domain: 'example.net', selector: 's' } } as const;
+
+    const genuine = getInvitationTrustAssessment(event, makeEmail({ from: [{ email: 'bob@example.net' }], authenticationResults: aligned }), method);
+    expect(genuine.level).toBe('trusted');
+
+    const forged = getInvitationTrustAssessment(event, makeEmail({ from: [{ email: 'mallory@evil.example' }] }), method);
+    expect(forged).toMatchObject({
+      level: 'warning', reason: 'attendee_mismatch_unverified', senderEmail: 'mallory@evil.example', attendeeEmail: 'bob@example.net',
+    });
+  });
+
   it('does not trust an SPF or DKIM pass for a domain other than the From domain', () => {
     // MAIL FROM at the attacker's domain (SPF pass there), From and ORGANIZER
     // at the victim's; the victim publishes no DMARC policy, so dmarc=none.
@@ -502,6 +549,40 @@ describe('getInvitationTrustAssessment', () => {
     }), 'request');
     expect(dkim.level).toBe('caution');
     expect(dkim.reason).toBe('authentication_missing');
+  });
+
+  // Mail a signed-in user hands in never passes port 25, so Stalwart adds no
+  // Authentication-Results header to it (#1374).
+  describe('mail between users of the reader\'s own domains', () => {
+    const event: Partial<CalendarEvent> = {
+      participants: {
+        org: makeParticipant({ roles: { owner: true }, email: 'alice@example.com' }),
+      },
+    };
+    const own = ['bob@example.com', 'Bob@Example.org'];
+
+    it('trusts an invitation without an Authentication-Results header', () => {
+      const result = getInvitationTrustAssessment(event, makeEmail({ from: [{ email: 'alice@example.com' }] }), 'request', own);
+      expect(result.level).toBe('trusted');
+    });
+
+    it('still cautions when the sender is on another domain', () => {
+      const result = getInvitationTrustAssessment(event, makeEmail({ from: [{ email: 'alice@example.com' }] }), 'request', ['bob@example.net']);
+      expect(result.reason).toBe('authentication_missing');
+    });
+
+    it('still cautions when the header is there but nothing in it passed', () => {
+      const result = getInvitationTrustAssessment(event, makeEmail({
+        from: [{ email: 'alice@example.com' }],
+        authenticationResults: { dmarc: { result: 'none', domain: 'example.com' } },
+      }), 'request', own);
+      expect(result.reason).toBe('authentication_missing');
+    });
+
+    it('still warns when the sender is not the organizer', () => {
+      const result = getInvitationTrustAssessment(event, makeEmail({ from: [{ email: 'carol@example.com' }] }), 'request', own);
+      expect(result.reason).toBe('sender_mismatch_unverified');
+    });
   });
 });
 

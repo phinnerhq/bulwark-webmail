@@ -13,6 +13,8 @@ import { cn } from '@/lib/utils';
 import { getPathPrefix, withBasePath } from '@/lib/browser-navigation';
 import { clearCachedData } from '@/lib/clear-cached-data';
 import { SpamSiegeGame } from './spam-siege-game';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { toast } from '@/stores/toast-store';
 import { DebugSettings } from './debug-settings';
 
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.0.0";
@@ -39,7 +41,7 @@ function VersionUpdateTag() {
   return (
     <span
       className={cn(
-        "ms-2 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium align-middle",
+        "ms-2 inline-flex items-center rounded-full px-1.5 py-0.5 text-[0.625rem] font-medium align-middle",
         important
           ? "bg-red-500/15 text-red-700 dark:text-red-300"
           : "bg-amber-500/15 text-amber-700 dark:text-amber-300",
@@ -83,7 +85,13 @@ export function AboutFooter() {
     <div data-testid="settings-about" className="px-3 py-2">
       {showGame && <SpamSiegeGame onClose={() => setShowGame(false)} />}
       <div className="flex items-center gap-3">
-        <button onClick={handleLogoClick} className="flex items-center gap-3 flex-1 min-w-0 text-start focus:outline-none group/about cursor-pointer" aria-label="About">
+        {/* Named by what it shows (app name and version), with the focus
+            ring every other stop in the sidebar has. */}
+        <button
+          type="button"
+          onClick={handleLogoClick}
+          className="flex items-center gap-3 flex-1 min-w-0 text-start rounded-md focus-visible:outline-hidden group/about cursor-pointer"
+        >
           <img
             src={logoLight}
             alt={branded ? appName : 'Bulwark'}
@@ -96,8 +104,8 @@ export function AboutFooter() {
           />
           <div className="min-w-0">
             <p className="text-xs font-medium text-foreground truncate">{branded ? appName : t('about.title')}</p>
-            <p className="text-[11px] text-muted-foreground truncate">
-              v{APP_VERSION} <span className="text-muted-foreground/60">({GIT_COMMIT})</span>
+            <p className="text-[0.6875rem] text-muted-foreground truncate">
+              v{APP_VERSION} <span className="text-muted-foreground">({GIT_COMMIT})</span>
               <VersionUpdateTag />
             </p>
           </div>
@@ -106,7 +114,7 @@ export function AboutFooter() {
           href={sourceCodeUrl || UPSTREAM_SOURCE_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="shrink-0 inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+          className="shrink-0 inline-flex items-center gap-1 text-[0.6875rem] text-muted-foreground hover:text-foreground transition-colors"
         >
           {sourceCodeUrl ? t('about.source_code') : 'GitHub'} <ExternalLink className="w-3 h-3" />
         </a>
@@ -122,7 +130,6 @@ export function AboutFooter() {
  */
 export function AboutDataSettings() {
   const t = useTranslations('settings.advanced');
-  const tCommon = useTranslations('common');
   const tSettings = useTranslations('settings');
   const { settingsSyncDisabled, updateSetting, resetToDefaults, exportSettings, importSettings } =
     useSettingsStore();
@@ -157,39 +164,26 @@ export function AboutDataSettings() {
       const json = event.target?.result as string;
       const success = importSettings(json);
       if (success) {
-        alert(tSettings('import_success'));
+        toast.success(tSettings('import_success'));
       } else {
-        alert(tSettings('import_error'));
+        toast.error(tSettings('import_error'));
       }
     };
     reader.readAsText(file);
-  };
-
-  const handleRefreshCache = () => {
-    if (showRefreshConfirm) {
-      clearCachedData(); // reloads the page
-    } else {
-      setShowRefreshConfirm(true);
-      setTimeout(() => setShowRefreshConfirm(false), 5000);
-    }
+    // The same file can be picked again after fixing it.
+    e.target.value = '';
   };
 
   const handleReset = () => {
-    if (showResetConfirm) {
-      resetToDefaults();
-      setShowResetConfirm(false);
-      alert(tSettings('save_success'));
-    } else {
-      setShowResetConfirm(true);
-      setTimeout(() => setShowResetConfirm(false), 5000);
-    }
+    resetToDefaults();
+    toast.success(t('reset_settings.done'));
   };
 
   return (
     <div className="space-y-8">
       <SettingsSection id="backup" title={t('sections.backup')} description={t('sections.backup_description')}>
         {settingsSyncEnabled && (
-          <SettingItem label={t('settings_sync.label')} description={t('settings_sync.description')}>
+          <SettingItem label={t('settings_sync.label')} description={t('settings_sync.description')} term="sync">
             <ToggleSwitch checked={!settingsSyncDisabled} onChange={(checked) => updateSetting('settingsSyncDisabled', !checked)} />
           </SettingItem>
         )}
@@ -221,26 +215,36 @@ export function AboutDataSettings() {
       </SettingsSection>
 
       <SettingsSection id="fix" title={t('sections.fix')} description={t('sections.fix_description')}>
-        <SettingItem label={t('refresh_cache.label')} description={t('refresh_cache.description')}>
-          <Button
-            variant={showRefreshConfirm ? 'default' : 'outline'}
-            size="sm"
-            onClick={handleRefreshCache}
-          >
-            {showRefreshConfirm ? tCommon('yes') : t('refresh_cache.button')}
+        <SettingItem label={t('refresh_cache.label')} description={t('refresh_cache.description')} term="cache">
+          <Button variant="outline" size="sm" onClick={() => setShowRefreshConfirm(true)}>
+            {t('refresh_cache.button')}
           </Button>
         </SettingItem>
 
         <SettingItem label={t('reset_settings.label')} description={t('reset_settings.description')}>
-          <Button
-            variant={showResetConfirm ? 'destructive' : 'outline'}
-            size="sm"
-            onClick={handleReset}
-          >
-            {showResetConfirm ? tCommon('yes') : t('reset_settings.button')}
+          <Button variant="outline" size="sm" onClick={() => setShowResetConfirm(true)}>
+            {t('reset_settings.button')}
           </Button>
         </SettingItem>
       </SettingsSection>
+
+      <ConfirmDialog
+        isOpen={showRefreshConfirm}
+        onClose={() => setShowRefreshConfirm(false)}
+        onConfirm={() => clearCachedData() /* reloads the page */}
+        title={t('refresh_cache.confirm_title')}
+        message={t('refresh_cache.description')}
+        confirmText={t('refresh_cache.button')}
+      />
+      <ConfirmDialog
+        isOpen={showResetConfirm}
+        onClose={() => setShowResetConfirm(false)}
+        onConfirm={handleReset}
+        title={t('reset_settings.confirm_title')}
+        message={t('reset_settings.description')}
+        confirmText={t('reset_settings.button')}
+        variant="destructive"
+      />
 
       <DebugSettings />
     </div>

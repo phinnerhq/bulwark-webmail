@@ -10,6 +10,8 @@ vi.mock('@/lib/browser-navigation', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/browser-navigation')>()),
   apiFetch: (...args: unknown[]) => apiFetch(...args),
 }));
+const appName = vi.hoisted(() => ({ value: 'Webmail' }));
+vi.mock('@/hooks/use-config', () => ({ useConfig: () => ({ appName: appName.value }) }));
 
 import { PluginConnectDialog } from '../plugin-connect-dialog';
 import { originFromInput, requestConnect, type ConnectResult } from '@/lib/plugin-sandbox/connect-dialog';
@@ -17,6 +19,7 @@ import { originFromInput, requestConnect, type ConnectResult } from '@/lib/plugi
 beforeEach(() => {
   apiFetch.mockReset();
   apiFetch.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+  appName.value = 'Webmail';
 });
 
 function open(mode: 'password' | 'signin' = 'password') {
@@ -60,6 +63,38 @@ describe('connect dialog', () => {
 
     await expect(result).resolves.toEqual({ connected: false, origin: 'https://cloud.example.org' });
     expect(JSON.parse(apiFetch.mock.calls[0][1].body)).not.toHaveProperty('secret');
+  });
+
+  it('names the app as configured, and Bulwark on a stock install', async () => {
+    const first = render(<PluginConnectDialog />);
+    const result = open('signin');
+    expect(screen.getByText(/intro_signin /)).toHaveTextContent('"appName":"Bulwark"');
+    first.unmount();
+
+    appName.value = 'Acme Mail';
+    render(<PluginConnectDialog />);
+    expect(screen.getByText(/intro_signin /)).toHaveTextContent('"appName":"Acme Mail"');
+    act(() => { fireEvent.keyDown(window, { key: 'Escape' }); });
+    await expect(result).resolves.toEqual({ connected: false });
+  });
+
+  // A modal: the first field takes the focus, Tab stays inside, and the
+  // focus goes back to what opened it.
+  it('holds the focus while open and gives it back after', async () => {
+    const opener = document.createElement('button');
+    document.body.appendChild(opener);
+    opener.focus();
+    render(<PluginConnectDialog />);
+    const result = open();
+    const server = screen.getByText('server').parentElement!.querySelector('input')!;
+    expect(server).toHaveFocus();
+    const dialog = screen.getByRole('dialog');
+    fireEvent.keyDown(server, { key: 'Tab', shiftKey: true });
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }));
+    await expect(result).resolves.toEqual({ connected: false });
+    await waitFor(() => expect(opener).toHaveFocus());
+    opener.remove();
   });
 
   it('shows the server error and stays open', async () => {

@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+import os from 'os';
 import path from 'path';
 
 export default defineConfig({
@@ -13,9 +14,13 @@ export default defineConfig({
     // repos/** holds sibling checkouts with their own runners. node_modules
     // must be globbed at any depth or the nested repos/*/node_modules trees
     // get collected too.
-    // scripts/lite/smoke/**, scripts/perf-guard/** and scripts/idp-switch/** are
-    // Playwright suites.
-    exclude: ['integration/**', 'examples/**', 'repos/**', '**/node_modules/**', '.next/**', 'out/**', 'scripts/lite/smoke/**', 'scripts/perf-guard/**', 'scripts/idp-switch/**'],
+    // scripts/lite/smoke/** is the Playwright smoke for the static Lite export;
+    // scripts/idp-switch/** is the Playwright suite for the IdP account switch.
+    exclude: ['integration/**', 'examples/**', 'repos/**', '**/node_modules/**', '.next/**', 'out/**', 'scripts/lite/smoke/**', 'scripts/perf-guard/**', 'scripts/a11y-guard/**', 'scripts/idp-switch/**'],
+    // The default node_modules/.vitest-cache sits inside the tree Turbopack
+    // watches, so every test run made a running `next dev` rebuild and reload
+    // the open page about once a second.
+    fsModuleCachePath: path.join(os.tmpdir(), 'bulwark-vitest-cache'),
   },
   resolve: {
     alias: {

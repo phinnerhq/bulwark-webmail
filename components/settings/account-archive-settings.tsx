@@ -11,12 +11,33 @@ import { decryptArchive, encryptArchive, ARCHIVE_MIN_PASSWORD, type ArchiveOwner
 import { collectAccounts, fetchArchive, putArchive, removeArchive, restoreArchive } from '@/lib/account-archive-client';
 import { toUnicodeEmail } from '@/lib/idn';
 import { SettingsSection } from './settings-section';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useConfirmDialog } from '@/hooks/use-confirm-dialog';
 
 const KNOWN_ERRORS = ['mismatch', 'password_length', 'unlock_failed', 'owner_signin_required', 'https_required'];
+
+type BackupT = ReturnType<typeof useTranslations>;
+
+/** The text for a failed save, restore or delete. */
+export function archiveErrorText(t: BackupT, err: unknown): string {
+  const code = err instanceof Error ? err.message : '';
+  return t(`errors.${KNOWN_ERRORS.includes(code) ? code : 'storage_failed'}`);
+}
+
+/** What a restore did, in one status line. */
+export function restoreSummary(t: BackupT, result: Awaited<ReturnType<typeof restoreArchive>>): string {
+  return [
+    t(result.waiting ? 'restored' : 'restored_signed_in', result),
+    result.signedIn ? t('signed_in', { count: result.signedIn }) : '',
+    result.signInFailed ? t('sign_in_failed', { count: result.signInFailed }) : '',
+    result.skipped ? t('skipped', { count: result.skipped }) : '',
+  ].join(' ').trim();
+}
 
 /** Save this browser's account list, encrypted, under the active account; restore it on another device. */
 export function AccountArchiveSettings() {
   const t = useTranslations('settings.account.backup');
+  const tCommon = useTranslations('common');
   const id = useId();
   const username = useAuthStore(s => s.username);
   const serverUrl = useAuthStore(s => s.serverUrl);
@@ -30,6 +51,7 @@ export function AccountArchiveSettings() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
   const owner: ArchiveOwner | null = username && serverUrl ? { username, serverUrl } : null;
+  const { dialogProps: confirmProps, confirm } = useConfirmDialog();
 
   useEffect(() => {
     setSaved(null);
@@ -53,10 +75,7 @@ export function AccountArchiveSettings() {
       open(null);
       setMessage({ error: false, text });
     }
-    catch (err) {
-      const code = err instanceof Error ? err.message : '';
-      setMessage({ error: true, text: t(`errors.${KNOWN_ERRORS.includes(code) ? code : 'storage_failed'}`) });
-    } finally { setBusy(false); }
+    catch (err) { setMessage({ error: true, text: archiveErrorText(t, err) }); } finally { setBusy(false); }
   };
 
   const save = () => run(async () => {
@@ -70,16 +89,16 @@ export function AccountArchiveSettings() {
   const restore = () => run(async () => {
     const envelope = await fetchArchive(owner);
     if (!envelope) { setSaved(false); throw new Error('storage_failed'); }
-    const result = await restoreArchive(await decryptArchive(owner, envelope, password), rememberMeEnabled);
-    return [
-      t(result.waiting ? 'restored' : 'restored_signed_in', result),
-      result.signedIn ? t('signed_in', { count: result.signedIn }) : '',
-      result.signInFailed ? t('sign_in_failed', { count: result.signInFailed }) : '',
-      result.skipped ? t('skipped', { count: result.skipped }) : '',
-    ].join(' ').trim();
+    return restoreSummary(t, await restoreArchive(await decryptArchive(owner, envelope, password), rememberMeEnabled));
   });
-  const remove = () => {
-    if (!window.confirm(t('delete_confirm'))) return;
+  const remove = async () => {
+    const ok = await confirm({
+      title: t('delete_confirm'),
+      message: t('delete_message'),
+      confirmText: tCommon('delete'),
+      variant: 'destructive',
+    });
+    if (!ok) return;
     void run(async () => { await removeArchive(owner); setSaved(false); return t('deleted'); });
   };
 
@@ -141,6 +160,7 @@ export function AccountArchiveSettings() {
           {message.text}
         </p>
       )}
+      <ConfirmDialog {...confirmProps} />
     </SettingsSection>
   );
 }

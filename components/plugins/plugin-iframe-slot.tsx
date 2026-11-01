@@ -23,6 +23,8 @@ interface Props {
   pluginId: string;
   slot: SlotName;
   extraProps?: Record<string, unknown>;
+  /** The frame fills its panel and scrolls inside, instead of growing with its content. */
+  fill?: boolean;
 }
 
 interface FloatingDropdownState {
@@ -36,7 +38,7 @@ interface FloatingDropdownState {
   ariaLabel?: string;
 }
 
-export function PluginIframeSlot({ pluginId, slot, extraProps }: Props) {
+export function PluginIframeSlot({ pluginId, slot, extraProps, fill = false }: Props) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const instanceRef = useRef<SandboxInstance | null>(null);
   const [height, setHeight] = useState<number>(0);
@@ -46,13 +48,22 @@ export function PluginIframeSlot({ pluginId, slot, extraProps }: Props) {
   // null = pending, true/false = decided
   const [show, setShow] = useState<boolean | null>(null);
 
+  // A caller that builds its props inline hands over a new object on every
+  // render; each one used to cost a shouldShow round trip to the plugin and a
+  // props-update for the frame. Keep the last object while its values are
+  // the same ones.
+  const [stableProps, setStableProps] = useState(extraProps);
+  const sameValues = shallowEqual(stableProps, extraProps);
+  if (!sameValues) setStableProps(extraProps);
+  const currentProps = sameValues ? stableProps : extraProps;
+
   // What the plugin may see of the surface the slot sits on. Everything the
   // plugin receives (shouldShow context, mount props, updates) goes through
   // this, so a ui:* permission never hands over mail, events or contacts.
   const props = useMemo(() => {
     const active = getActivePlugin(pluginId);
-    return active ? slotPropsFor(active.plugin, slot, extraProps ?? {}) : {};
-  }, [pluginId, slot, extraProps]);
+    return active ? slotPropsFor(active.plugin, slot, currentProps ?? {}) : {};
+  }, [pluginId, slot, currentProps]);
 
   // Decide whether to mount based on the plugin's shouldShow (background-side).
   useEffect(() => {
@@ -82,6 +93,7 @@ export function PluginIframeSlot({ pluginId, slot, extraProps }: Props) {
       locale,
       tier: active.tier,
       extraProps: props,
+      fill,
       hostContainer: wrapperRef.current,
       onResize: (h, w) => {
         setHeight(h);
@@ -126,7 +138,7 @@ export function PluginIframeSlot({ pluginId, slot, extraProps }: Props) {
     // We intentionally don't depend on props here - propagating prop
     // changes happens via postMessage below to avoid iframe churn.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [show, pluginId, slot]);
+  }, [show, pluginId, slot, fill]);
 
   // Push prop updates without remount.
   useEffect(() => {
@@ -154,8 +166,9 @@ export function PluginIframeSlot({ pluginId, slot, extraProps }: Props) {
         ref={wrapperRef}
         style={inline
           ? { display: 'inline-block', verticalAlign: 'middle', height, width: width ?? 0, maxWidth: '100%', overflow: 'hidden' }
-          : { height, minHeight: height }}
+          : fill ? { flex: '1 1 0%', minHeight: 0 } : { height, minHeight: height }}
         data-plugin-iframe-slot={`${pluginId}:${slot}`}
+        data-plugin-iframe-fill={fill || undefined}
       />
       {floatingDropdown && (
         <FloatingDropdownPortal
@@ -186,6 +199,14 @@ export function PluginIframeSlot({ pluginId, slot, extraProps }: Props) {
       )}
     </>
   );
+}
+
+function shallowEqual(a: Record<string, unknown> | undefined, b: Record<string, unknown> | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every((k) => Object.prototype.hasOwnProperty.call(b, k) && Object.is(a[k], b[k]));
 }
 
 function FloatingDropdownPortal({

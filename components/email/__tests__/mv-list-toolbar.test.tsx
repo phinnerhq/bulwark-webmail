@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { Email, Mailbox } from '@/lib/jmap/types';
 import { KEYWORD_PREFIX } from '@/lib/thread-utils';
@@ -60,7 +60,7 @@ describe('MvListToolbar filing actions', () => {
     fireEvent.click(screen.getByLabelText('move_to'));
     fireEvent.click(screen.getByText('Receipts'));
 
-    await waitFor(() => expect(batchMoveToMailbox).toHaveBeenCalledWith({}, 'receipts'));
+    await waitFor(() => expect(batchMoveToMailbox).toHaveBeenCalledWith({}, 'receipts', undefined, []));
   });
 
   it('does not offer the folder you are already in as a destination', () => {
@@ -149,6 +149,10 @@ describe('MvListToolbar overflow menu', () => {
     open();
 
     expect(screen.getByText('mark_all_folders_read')).toBeInTheDocument();
+    // The app's one menu (R6): the ContextMenu, in a portal, with its rows.
+    const menu = screen.getByRole('menu');
+    expect(menu.parentElement).toBe(document.body);
+    expect(screen.getByRole('menuitem', { name: 'mark_all_folders_read' }).className).toContain('pointer-coarse:min-h-11');
   });
 
   it('withholds emptying the folder outside spam and the bin', () => {
@@ -273,7 +277,86 @@ describe('MvListToolbar delete prompt', () => {
     select(folder);
     deleteSelection();
 
-    expect(await screen.findByText('permanent_delete_confirm_title')).toBeInTheDocument();
+    // A selection: "Delete these emails permanently?", not the one-message title.
+    expect(await screen.findByText('permanent_delete_confirm_batch_title')).toBeInTheDocument();
     expect(batchDelete).not.toHaveBeenCalled();
+  });
+});
+
+// Settings > Accessibility: "Confirm before deleting" and "Confirm before
+// archiving" ask before the selection goes, also when the bulk-delete prompt
+// is off (WCAG 3.3.4).
+describe('MvListToolbar removal confirmations', () => {
+  const batchDelete = vi.fn().mockResolvedValue(true);
+  const batchArchive = vi.fn().mockResolvedValue(true);
+
+  beforeEach(() => {
+    batchDelete.mockClear();
+    batchArchive.mockClear();
+    useAuthStore.setState({ client: {} as never } as never);
+    useEmailStore.setState({
+      emails: [message('a'), message('b')],
+      mailboxes,
+      selectedMailbox: 'inbox',
+      selectedEmailKeys: new Set(['a', 'b']),
+      isUnifiedView: false,
+      unifiedRole: null,
+      error: null,
+      batchDelete,
+      batchArchive,
+    } as never);
+  });
+
+  it('asks before deleting with "Confirm before deleting" on, and deletes after Delete', async () => {
+    useSettingsStore.setState({ confirmBulkDelete: false, permanentlyDeleteJunk: false, confirmDelete: true } as never);
+    render(<MvListToolbar loadedCount={2} onRefresh={() => {}} />);
+    fireEvent.click(screen.getByLabelText('delete'));
+
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent('delete_title');
+    expect(batchDelete).not.toHaveBeenCalled();
+    fireEvent.click(screen.getAllByRole('button', { name: 'delete' }).at(-1)!);
+    await waitFor(() => expect(batchDelete).toHaveBeenCalledTimes(1));
+  });
+
+  it('asks before archiving with "Confirm before archiving" on, and keeps the mail on Cancel', async () => {
+    useSettingsStore.setState({ confirmArchive: true } as never);
+    render(<MvListToolbar loadedCount={2} onRefresh={() => {}} />);
+    fireEvent.click(screen.getByLabelText('archive'));
+
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent('archive_title');
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(batchArchive).not.toHaveBeenCalled();
+  });
+
+  it('archives straight away with the setting off', async () => {
+    useSettingsStore.setState({ confirmArchive: false } as never);
+    render(<MvListToolbar loadedCount={2} onRefresh={() => {}} />);
+    fireEvent.click(screen.getByLabelText('archive'));
+    await waitFor(() => expect(batchArchive).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('leaves no timer running once it is gone', async () => {
+    // The buttons stay disabled for a moment after an action. A bare timer
+    // for that outlived the toolbar and reached React after the test
+    // environment was torn down ("window is not defined", failing CI).
+    vi.useFakeTimers();
+    try {
+      useSettingsStore.setState({ confirmArchive: false } as never);
+      const { unmount } = render(<MvListToolbar loadedCount={2} onRefresh={() => {}} />);
+      await act(async () => {
+        fireEvent.click(screen.getByLabelText('archive'));
+      });
+      expect(batchArchive).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+      unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

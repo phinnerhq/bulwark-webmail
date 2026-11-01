@@ -12,10 +12,13 @@ vi.mock('@/hooks/use-email-drag', () => ({
 }));
 
 vi.mock('@/stores/auth-store', () => {
-  const state = { identities: [], username: null };
-  return {
-    useAuthStore: (selector?: (s: typeof state) => unknown) => (selector ? selector(state) : state),
-  };
+  const state = { identities: [], username: null, client: null, activeAccountId: null, getClientForAccount: () => undefined };
+  // getState for the plugin action target (resolveEmailBlobContext).
+  const useAuthStore = Object.assign(
+    (selector?: (s: typeof state) => unknown) => (selector ? selector(state) : state),
+    { getState: () => state },
+  );
+  return { useAuthStore };
 });
 
 const ACCOUNT_TEAL = { id: 'acct-teal', avatarColor: '#0d9488', label: 'Teal account' };
@@ -433,6 +436,65 @@ describe('ThreadListItem whole row toggles in selection mode', () => {
   });
 });
 
+describe('ThreadListItem avatar gutter (#1381)', () => {
+  function setup(emails: Email[]) {
+    useSettingsStore.setState({ interfaceLayout: 'default', mailLayout: 'split', density: 'regular' } as never);
+    useEmailStore.setState({ selectedEmailKeys: new Set<string>(), selectedMailbox: 'inbox' });
+    const onEmailSelect = vi.fn();
+    const onEmailDoubleClick = vi.fn();
+    const onToggleExpand = vi.fn();
+    const [thread] = groupEmailsByThread(emails);
+    const utils = render(
+      <ThreadListItem
+        thread={thread}
+        isExpanded={false}
+        onToggleExpand={onToggleExpand}
+        onEmailSelect={onEmailSelect}
+        onEmailDoubleClick={onEmailDoubleClick}
+      />,
+    );
+    const gutter = utils.container.querySelector<HTMLElement>('[data-select-gutter]')!;
+    return { ...utils, gutter, onEmailSelect, onEmailDoubleClick, onToggleExpand };
+  }
+  const selection = () => [...useEmailStore.getState().selectedEmailKeys].sort();
+
+  it('ticks a message from beside its avatar instead of opening it', () => {
+    const { gutter, onEmailSelect } = setup([makeEmail()]);
+    fireEvent.click(gutter);
+    expect(onEmailSelect).not.toHaveBeenCalled();
+    expect(selection()).toEqual(['email-1']);
+    fireEvent.click(gutter);
+    expect(selection()).toEqual([]);
+  });
+
+  it('does not open the message on a double click there', () => {
+    const { gutter, onEmailDoubleClick } = setup([makeEmail()]);
+    fireEvent.doubleClick(gutter);
+    expect(onEmailDoubleClick).not.toHaveBeenCalled();
+  });
+
+  it('ticks a thread from beside its avatar, and its chevron still only unfolds it', () => {
+    const { gutter, container, onEmailSelect, onToggleExpand } = setup([
+      makeEmail({ id: 'older', receivedAt: '2024-01-14T10:00:00Z' }),
+      makeEmail({ id: 'newer', receivedAt: '2024-01-15T10:00:00Z' }),
+    ]);
+    fireEvent.click(gutter);
+    expect(onEmailSelect).not.toHaveBeenCalled();
+    expect(selection()).toEqual(['newer', 'older']);
+
+    fireEvent.click(container.querySelector('[data-expand-toggle]')!);
+    expect(onToggleExpand).toHaveBeenCalledTimes(1);
+    expect(selection()).toEqual(['newer', 'older']);
+  });
+
+  it('ticks the row once from the avatar itself', () => {
+    const { onEmailSelect } = setup([makeEmail()]);
+    fireEvent.click(screen.getByRole('checkbox'));
+    expect(onEmailSelect).not.toHaveBeenCalled();
+    expect(selection()).toEqual(['email-1']);
+  });
+});
+
 describe('ThreadListItem Mountain View phone row layout', () => {
   it('sets the star at the end of the preview line, not under the time', () => {
     useSettingsStore.setState({ interfaceLayout: 'mountain-view', mailLayout: 'split', showPreview: true, density: 'regular' } as never);
@@ -692,6 +754,22 @@ describe('ThreadListItem Mountain View desktop row', () => {
     useEmailStore.setState({ selectedEmailKeys: new Set<string>(), selectedMailbox: 'inbox' });
   });
 
+  it('ticks the row from its checkbox without opening it, even on a double click (#1381)', () => {
+    const onEmailSelect = vi.fn();
+    const onEmailDoubleClick = vi.fn();
+    const [thread] = groupEmailsByThread([makeEmail()]);
+    render(
+      <ThreadListItem thread={thread} isExpanded={false} onToggleExpand={() => {}} onEmailSelect={onEmailSelect} onEmailDoubleClick={onEmailDoubleClick} />,
+    );
+    const checkbox = screen.getByRole('checkbox');
+    fireEvent.click(checkbox);
+    fireEvent.click(checkbox);
+    fireEvent.doubleClick(checkbox);
+    expect(onEmailSelect).not.toHaveBeenCalled();
+    expect(onEmailDoubleClick).not.toHaveBeenCalled();
+    expect(useEmailStore.getState().selectedEmailKeys.size).toBe(0);
+  });
+
   it('runs the snippet on from the subject after a dash', () => {
     const { container } = renderRow(makeEmail({ preview: 'See you there' }));
     expect(container.textContent).toContain('Test Subject - See you there');
@@ -779,5 +857,187 @@ describe('ThreadListItem date (#891)', () => {
     );
     expect(container.textContent).toMatch(/2019/);
     expect(container.textContent).not.toMatch(/2024/);
+  });
+});
+
+describe('ThreadListItem hover actions', () => {
+  // When the row above is deleted from its hover actions, the next row slides
+  // under the resting pointer. The browser then reports a pointerover whose
+  // relatedTarget is the list around the row, and React builds no
+  // onPointerEnter from that, so the row has to arm its actions on pointerover.
+  const renderInList = (thread: ReturnType<typeof groupEmailsByThread>[number]) =>
+    render(
+      <div data-testid="list">
+        <ThreadListItem thread={thread} isExpanded={false} onToggleExpand={() => {}} onEmailSelect={() => {}} onDelete={() => {}} />
+      </div>,
+    );
+
+  it.each([
+    ['a single message', () => groupEmailsByThread([makeEmail()])[0]],
+    ['a conversation', () => groupEmailsByThread([
+      makeEmail({ id: 'a', receivedAt: '2024-01-15T10:00:00Z' }),
+      makeEmail({ id: 'b', receivedAt: '2024-01-15T11:00:00Z' }),
+    ])[0]],
+  ])('mounts them for %s that slides under a resting pointer', (_name, makeThread) => {
+    const { container } = renderInList(makeThread());
+    expect(screen.queryByTestId('hover-action-delete')).toBeNull();
+    const row = screen.queryByTestId('email-list-item') ?? container.querySelector('[data-unread]');
+    expect(row).not.toBeNull();
+    fireEvent.pointerOver(row!, { relatedTarget: screen.getByTestId('list') });
+    expect(screen.getByTestId('hover-action-delete')).toBeTruthy();
+  });
+
+  // Tabbing to a row's checkbox shows them too (group-has-[:focus-visible]), so they
+  // have to be there without a pointer.
+  it.each([
+    ['a single message', () => groupEmailsByThread([makeEmail()])[0]],
+    ['a conversation', () => groupEmailsByThread([
+      makeEmail({ id: 'a', receivedAt: '2024-01-15T10:00:00Z' }),
+      makeEmail({ id: 'b', receivedAt: '2024-01-15T11:00:00Z' }),
+    ])[0]],
+  ])('mounts them for %s when a control in the row gets the keyboard focus', (_name, makeThread) => {
+    const { container } = renderInList(makeThread());
+    expect(screen.queryByTestId('hover-action-delete')).toBeNull();
+    const row = screen.queryByTestId('email-list-item') ?? container.querySelector('[data-unread]');
+    const control = row!.querySelector<HTMLElement>('button, [tabindex]:not([tabindex="-1"])');
+    expect(control).not.toBeNull();
+    act(() => { control!.focus(); });
+    expect(screen.getByTestId('hover-action-delete')).toBeTruthy();
+  });
+});
+
+describe('ThreadListItem open message', () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ emailKeywords: [...DEFAULT_KEYWORDS], showPreview: false, mailLayout: 'split', interfaceLayout: 'default' });
+    useEmailStore.setState({ selectedEmailKeys: new Set<string>(), selectedMailbox: '' });
+  });
+
+  // A tag view lists the own and the group's eaaaaab: opening one draws only that one open.
+  it.each([
+    ['own', makeEmail({ id: 'eaaaaab', sourceClientAccountId: 'login-a', sourceAccountId: 'cf' }), true],
+    ['group', makeEmail({ id: 'eaaaaab', sourceClientAccountId: 'login-a', sourceAccountId: 'ce' }), false],
+  ])('draws the %s row as open only when it is the open message', (_name, email, open) => {
+    const [thread] = groupEmailsByThread([email]);
+    const { container } = render(
+      <ThreadListItem thread={thread} isExpanded={false} selectedEmailKey="login-a/cf:eaaaaab" onToggleExpand={() => {}} onEmailSelect={() => {}} />,
+    );
+    // The open message's row is marked current in the list (SR-01).
+    expect(container.querySelector('[role="row"][aria-current="true"]') !== null).toBe(open);
+  });
+});
+
+describe('ThreadListItem fallbacks', () => {
+  it('names a message without subject or sender in the user\'s language', () => {
+    renderRow(makeEmail({ subject: '', from: [] }));
+    // The i18n mock renders the keys.
+    expect(screen.getByText('no_subject')).toBeInTheDocument();
+    expect(screen.getByText('unknown_sender')).toBeInTheDocument();
+    expect(screen.queryByText('(no subject)')).toBeNull();
+  });
+});
+
+describe('ThreadListItem swipe on a conversation', () => {
+  it('archives the conversation\'s row like a single message\'s', () => {
+    useUIStore.setState({ isMobile: true, isTablet: false, isDesktop: false });
+    useSettingsStore.setState({ swipeRightAction: 'archive', swipeLeftAction: 'delete' } as never);
+    const first = makeEmail({ id: 'a', threadId: 't', receivedAt: '2024-01-15T09:00:00Z' });
+    const second = makeEmail({ id: 'b', threadId: 't', receivedAt: '2024-01-15T10:00:00Z' });
+    const [thread] = groupEmailsByThread([first, second]);
+    const onArchive = vi.fn();
+    const { container } = render(
+      <ThreadListItem thread={thread} isExpanded={false} onToggleExpand={() => {}} onEmailSelect={() => {}} onArchive={onArchive} onDelete={vi.fn()} />,
+    );
+    const row = container.querySelector('[data-unread]')!;
+    fireEvent.touchStart(row, { touches: [{ clientX: 10, clientY: 10 }] });
+    fireEvent.touchMove(row, { touches: [{ clientX: 160, clientY: 12 }] });
+    fireEvent.touchEnd(row);
+    expect(onArchive).toHaveBeenCalledWith(expect.objectContaining({ id: 'b' }));
+  });
+});
+
+// R11: in an Arabic interface an English subject was cut on the wrong side.
+// The text takes its direction from itself, wherever it sits.
+describe('ThreadListItem text direction', () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ emailKeywords: [...DEFAULT_KEYWORDS], showPreview: true, mailLayout: 'split', interfaceLayout: 'default' });
+  });
+
+  it.each([
+    ['a single message', () => groupEmailsByThread([makeEmail({ preview: 'Preview text here' })])[0]],
+    ['a conversation', () => groupEmailsByThread([
+      makeEmail({ id: 'a', receivedAt: '2024-01-15T10:00:00Z', preview: 'Preview text here' }),
+      makeEmail({ id: 'b', receivedAt: '2024-01-15T11:00:00Z', preview: 'Preview text here' }),
+    ])[0]],
+  ])('gives the sender, subject and preview of %s dir="auto"', (_name, makeThread) => {
+    render(<ThreadListItem thread={makeThread()} isExpanded={false} onToggleExpand={() => {}} onEmailSelect={() => {}} />);
+    for (const text of ['Alice', 'Test Subject', 'Preview text here']) {
+      const el = screen.getAllByText((_c, node) => node?.textContent?.trim() === text && node.children.length === 0)[0];
+      expect(el.closest('[dir="auto"]'), text).not.toBeNull();
+    }
+  });
+});
+
+describe('ThreadListItem for screen readers and keyboards (SR-01, MO-18)', () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ showPreview: false, announceRowPreview: false, showRowActionButton: false, interfaceLayout: 'default' } as never);
+    useEmailStore.setState({ selectedEmailKeys: new Set<string>(), selectedMailbox: '' });
+  });
+
+  it('is one row named after sender, subject and state', () => {
+    renderRow(makeEmail({ keywords: {}, from: [{ name: 'Anna Berg', email: 'anna@example.com' }], subject: 'Budget' }));
+    const row = screen.getByRole('row');
+    const name = row.getAttribute('aria-label') ?? '';
+    expect(name).toMatch(/^unread, Anna Berg, Budget, /);
+  });
+
+  it('reads the preview only when that setting is on', () => {
+    const email = makeEmail({ preview: 'Numbers for Q3 attached' });
+    const { unmount } = renderRow(email);
+    expect(screen.getByRole('row').getAttribute('aria-label')).not.toContain('Numbers for Q3');
+    unmount();
+    useSettingsStore.setState({ announceRowPreview: true } as never);
+    renderRow(email);
+    expect(screen.getByRole('row').getAttribute('aria-label')).toContain('Numbers for Q3 attached');
+  });
+
+  it('ticks the row with Space', () => {
+    renderRow(makeEmail({ id: 'm1' }));
+    fireEvent.keyDown(screen.getByRole('row'), { key: ' ' });
+    expect(useEmailStore.getState().selectedEmailKeys.size).toBe(1);
+  });
+
+  it('shows an actions button that opens the row menu when that setting is on', () => {
+    const onContextMenu = vi.fn();
+    const [thread] = groupEmailsByThread([makeEmail()]);
+    const ui = (
+      <ThreadListItem thread={thread} isExpanded={false} onToggleExpand={() => {}} onEmailSelect={() => {}} onContextMenu={onContextMenu} />
+    );
+    const { rerender } = render(ui);
+    expect(screen.queryByRole('button', { name: 'row_actions' })).toBeNull();
+    act(() => { useSettingsStore.setState({ showRowActionButton: true } as never); });
+    rerender(ui);
+    fireEvent.click(screen.getByRole('button', { name: 'row_actions' }));
+    expect(onContextMenu).toHaveBeenCalledTimes(1);
+  });
+
+  it('tells screen readers whether a conversation is open and puts its messages a level down', () => {
+    const first = makeEmail({ id: 'a', threadId: 't', receivedAt: '2024-01-15T09:00:00Z' });
+    const second = makeEmail({ id: 'b', threadId: 't', receivedAt: '2024-01-15T10:00:00Z' });
+    const [thread] = groupEmailsByThread([first, second]);
+    render(<ThreadListItem thread={thread} isExpanded expandedEmails={thread.emails} onToggleExpand={() => {}} onEmailSelect={() => {}} />);
+    const rows = screen.getAllByRole('row');
+    expect(rows[0]).toHaveAttribute('aria-expanded', 'true');
+    expect(rows[0]).toHaveAttribute('aria-level', '1');
+    expect(rows.slice(1).every((r) => r.getAttribute('aria-level') === '2')).toBe(true);
+    // Each row holds its content in a cell, so its controls are allowed there.
+    expect(rows[0].querySelector('[role="gridcell"]')).not.toBeNull();
+  });
+
+  it('names the conversation toggle after its subject', () => {
+    const first = makeEmail({ id: 'a', threadId: 't', subject: 'Trip', receivedAt: '2024-01-15T09:00:00Z' });
+    const second = makeEmail({ id: 'b', threadId: 't', subject: 'Trip', receivedAt: '2024-01-15T10:00:00Z' });
+    const [thread] = groupEmailsByThread([first, second]);
+    render(<ThreadListItem thread={thread} isExpanded={false} onToggleExpand={() => {}} onEmailSelect={() => {}} />);
+    expect(screen.getByRole('button', { name: /expand_named/ })).toBeTruthy();
   });
 });

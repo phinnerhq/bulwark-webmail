@@ -1,8 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useSettingsStore } from '@/stores/settings-store';
+import { useEmailStore } from '@/stores/email-store';
+import { useIdentityStore } from '@/stores/identity-store';
+import { jmapErrorType } from '@/lib/jmap/jmap-error';
 import { SettingsSection, SettingItem, ToggleSwitch, Select } from './settings-section';
 import { playNotificationSound, NOTIFICATION_SOUNDS } from '@/lib/notification-sound';
 import type { NotificationSoundChoice } from '@/lib/notification-sound';
@@ -20,11 +23,13 @@ import {
   isWebPushEnabled,
   isWebPushSupported,
   listPushDevices,
+  mailAccountsWithoutPush,
   revokePushDevice,
   serverSupportsEmailPush,
 } from '@/lib/web-push';
 import type { PushDevice } from '@/lib/web-push';
 import { IS_LITE } from '@/lib/lite';
+import { useNoThirdPartyTraffic } from '@/hooks/use-third-party-mode';
 import {
   resolveActiveRelayUrl,
   resolvePushRelayOptions,
@@ -46,6 +51,9 @@ type DevicesState =
 export function NotificationSettings() {
   const t = useTranslations('settings.notifications');
   const tAppearance = useTranslations('settings.appearance');
+  const tThirdParty = useTranslations('third_party');
+  // The relay list depends on it; re-render once the config is known (#903).
+  const noThirdParty = useNoThirdPartyTraffic();
   const {
     emailNotificationsEnabled,
     emailNotificationSound,
@@ -79,6 +87,8 @@ export function NotificationSettings() {
   const relayOptions = resolvePushRelayOptions(policy);
   const activeRelayUrl = resolveActiveRelayUrl(policy, pushRelayUrl);
   const relayChoiceFixed = pushRelayLocked || relayOptions.length < 2;
+  // Third-party traffic off and no relay of the organisation's own (#903).
+  const noRelay = !activeRelayUrl;
   const activeRelayLabel =
     relayOptions.find((option) => option.url === activeRelayUrl)?.label ?? activeRelayUrl;
 
@@ -136,11 +146,40 @@ export function NotificationSettings() {
   // components/service-worker-registration.tsx), not a browser limitation.
   const statusDescription = pushStatus.kind === 'unsupported'
     ? (IS_LITE ? t('push.status_lite') : `${t('push.status_unsupported')} ${t('push.ios_hint')}`)
+    : noRelay && !pushEnabled
+      ? tThirdParty('push_needs_relay')
     : busy
       ? t('push.status_busy')
       : pushEnabled
         ? t('push.status_active')
         : t('push.status_inactive');
+
+  // Stalwart pushes only the user's own mailboxes and their groups', so
+  // mailboxes shared by other users stay silent in the background (they still
+  // update while the app is open). Say so instead of leaving users to wonder.
+  const mailboxes = useEmailStore((s) => s.mailboxes);
+  // On 0.16 the user's identities tell their groups from mailboxes shared by
+  // ACL (see mailAccountsWithoutPush).
+  const identities = useIdentityStore((s) => s.identities);
+  const sharedMailboxesWithoutPush = useMemo(() => {
+    // Re-read after each enable run too: it may have added refused accounts.
+    if (!client || pushStatus.kind === 'unsupported') return false;
+    const accountIds = mailboxes.flatMap((m) => (m.isShared && m.accountId ? [m.accountId] : []));
+    return mailAccountsWithoutPush(client, accountIds, identities.map((identity) => identity.email)).length > 0;
+  }, [client, mailboxes, identities, pushStatus.kind]);
+
+  // The refusals a user can do something about get readable text; anything
+  // else keeps the error's own message.
+  const pushErrorMessage = (err: unknown, fallback: string) => {
+    switch (jmapErrorType(err)) {
+      case 'forbidden':
+        return t('push.error_forbidden');
+      case 'overQuota':
+        return t('push.error_over_quota');
+      default:
+        return err instanceof Error ? err.message : fallback;
+    }
+  };
 
   // `forceRecreate` is what the Re-register button is for: without it the enable
   // path just refreshes the existing subscription's expiry, so a registration
@@ -166,10 +205,7 @@ export function NotificationSettings() {
         setPushStatus({ kind: 'unsupported' });
         return;
       }
-      setPushStatus({
-        kind: 'error',
-        message: err instanceof Error ? err.message : 'Failed to enable push',
-      });
+      setPushStatus({ kind: 'error', message: pushErrorMessage(err, 'Failed to enable push') });
     } finally {
       await refreshDevices();
     }
@@ -204,10 +240,7 @@ export function NotificationSettings() {
           setPushStatus({ kind: 'unsupported' });
           return;
         }
-        setPushStatus({
-          kind: 'error',
-          message: err instanceof Error ? err.message : 'Failed to update push filter',
-        });
+        setPushStatus({ kind: 'error', message: pushErrorMessage(err, 'Failed to update push filter') });
       })
       .finally(() => { if (!cancelled) void refreshDevices(); });
     return () => { cancelled = true; };
@@ -384,7 +417,7 @@ export function NotificationSettings() {
         </SettingItem>
       </SettingsSection>
 
-      <SettingsSection id="push" title={t('push.title')} description={t('push.description')}>
+      <SettingsSection id="push" title={t('push.title')} description={t('push.description')} term="push">
         <SettingItem label={t('push.enable')} description={statusDescription}>
           <div className="flex items-center gap-2">
             {pushEnabled && (
@@ -395,19 +428,23 @@ export function NotificationSettings() {
             <ToggleSwitch
               checked={pushEnabled}
               onChange={(checked) => void (checked ? handleEnablePush() : handleDisablePush())}
-              disabled={busy || pushStatus.kind === 'unsupported' || !client}
+              disabled={busy || pushStatus.kind === 'unsupported' || !client || (noRelay && !pushEnabled)}
             />
           </div>
         </SettingItem>
 
+        {sharedMailboxesWithoutPush && (
+          <p className="text-xs text-muted-foreground">{t('push.shared_mailboxes_no_push')}</p>
+        )}
+
         <SettingItem
           advanced
           label={t('push.relay_label')}
-          description={pushRelayLocked ? t('push.relay_locked_desc') : t('push.relay_desc')}
+          description={pushRelayLocked ? t('push.relay_locked_desc') : noThirdParty ? tThirdParty('relay_desc') : t('push.relay_desc')}
           locked={pushRelayLocked}
         >
           {relayChoiceFixed ? (
-            <span className="text-sm text-muted-foreground">{activeRelayLabel}</span>
+            <span className="text-sm text-muted-foreground">{noRelay ? tThirdParty('relay_none') : activeRelayLabel}</span>
           ) : (
             <Select
               value={activeRelayUrl}
@@ -442,7 +479,7 @@ export function NotificationSettings() {
               onClick={() => void refreshDevices()}
               disabled={devices.kind === 'loading'}
             >
-              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${devices.kind === 'loading' ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${devices.kind === 'loading' ? 'animate-spin [animation-direction:reverse]' : ''}`} />
               {t('push.devices_refresh')}
             </Button>
           </div>

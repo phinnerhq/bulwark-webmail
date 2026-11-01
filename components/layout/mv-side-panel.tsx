@@ -4,14 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { addDays, endOfDay, format, isSameDay, startOfDay } from "date-fns";
 import {
-  BookUser,
-  Calendar as CalendarIcon,
+  CalendarEvent as CalendarIcon,
   ChevronLeft,
   ChevronRight,
   ExternalLink,
   ListTodo,
   Plus,
   Search,
+  Users,
   X,
 } from "@/components/icons";
 import { Link } from "@/i18n/navigation";
@@ -24,8 +24,10 @@ import { useTaskStore } from "@/stores/task-store";
 import { getTimedEventBoundsForDay } from "@/lib/calendar-utils";
 import { requestInternalMailto } from "@/lib/protocol-handlers/mailto";
 import { formatDateTime, cn } from "@/lib/utils";
+import { readableTextOn } from "@/lib/color-transform";
 import { Avatar } from "@/components/ui/avatar";
 import type { CalendarEvent } from "@/lib/jmap/types";
+import { useCvdColor } from "@/hooks/use-cvd-color";
 
 export type MvSidePanelId = "calendar" | "tasks" | "contacts";
 
@@ -52,7 +54,7 @@ export function MvSidePanel() {
   const buttons: Array<{ id: MvSidePanelId; label: string; icon: typeof CalendarIcon; color: string }> = [
     ...(showCalendar ? [{ id: "calendar" as const, label: t("calendar"), icon: CalendarIcon, color: "text-[#1a73e8]" }] : []),
     ...(showTasks ? [{ id: "tasks" as const, label: t("mv_tasks"), icon: ListTodo, color: "text-[#1a73e8]" }] : []),
-    ...(showContacts ? [{ id: "contacts" as const, label: t("contacts"), icon: BookUser, color: "text-[#1a73e8]" }] : []),
+    ...(showContacts ? [{ id: "contacts" as const, label: t("contacts"), icon: Users, color: "text-[#1a73e8]" }] : []),
   ];
 
   if (buttons.length === 0) return null;
@@ -63,6 +65,7 @@ export function MvSidePanel() {
     <>
       {active && (
         <aside
+          data-simple-hide=""
           data-mv-side-panel={active}
           className="mb-4 me-2 flex w-[300px] shrink-0 flex-col overflow-hidden rounded-2xl bg-background"
           aria-label={buttons.find((b) => b.id === active)?.label}
@@ -111,7 +114,7 @@ function PanelHeader({ title, subtitle, href, onClose, children }: {
   return (
     <div className="flex items-start gap-1 px-4 pt-4 pb-2">
       <div className="min-w-0 flex-1">
-        <div className={cn(subtitle ? "text-[11px] font-medium uppercase tracking-wider text-muted-foreground" : "text-[22px] leading-7")}>{title}</div>
+        <div className={cn(subtitle ? "text-[0.6875rem] font-medium text-muted-foreground" : "text-[1.375rem] leading-7")}>{title}</div>
         {subtitle && <div className="text-sm font-medium text-primary">{subtitle}</div>}
       </div>
       {children}
@@ -171,9 +174,10 @@ function CalendarPanel({ onClose }: { onClose: () => void }) {
     if (scrollRef.current) scrollRef.current.scrollTop = hour * HOUR_PX;
   }, [day]);
 
+  const paint = useCvdColor();
   const colorOf = (event: CalendarEvent) => {
     const calId = Object.keys(event.calendarIds ?? {})[0];
-    return event.color || calendars.find((c) => c.id === calId)?.color || "var(--color-primary)";
+    return paint(event.color || calendars.find((c) => c.id === calId)?.color || "var(--color-primary)");
   };
 
   const visible = events.filter((e) => {
@@ -210,7 +214,7 @@ function CalendarPanel({ onClose }: { onClose: () => void }) {
       {allDay.length > 0 && (
         <div className="space-y-1 border-b border-border px-3 pb-2">
           {allDay.map((e) => (
-            <div key={e.id} className="truncate rounded px-2 py-0.5 text-xs font-medium text-white" style={{ backgroundColor: colorOf(e) }}>
+            <div key={e.id} className="truncate rounded px-2 py-0.5 text-xs font-medium" style={{ backgroundColor: colorOf(e), color: readableTextOn(colorOf(e)) }}>
               {e.title || tCal("tasks.no_title")}
             </div>
           ))}
@@ -220,7 +224,7 @@ function CalendarPanel({ onClose }: { onClose: () => void }) {
         <div className="relative" style={{ height: 24 * HOUR_PX }}>
           {Array.from({ length: 24 }, (_, h) => (
             <div key={h} className="absolute inset-x-0 flex" style={{ top: h * HOUR_PX }}>
-              <span className="w-14 shrink-0 -translate-y-2 pe-2 text-end text-[10px] text-muted-foreground">
+              <span className="w-14 shrink-0 -translate-y-2 pe-2 text-end text-[0.625rem] text-muted-foreground">
                 {h === 0 ? "" : new Date(2000, 0, 1, h).toLocaleTimeString(undefined, { hour: "numeric", hour12: timeFormat === "12h" })}
               </span>
               <span className="flex-1 border-t border-border" />
@@ -230,12 +234,13 @@ function CalendarPanel({ onClose }: { onClose: () => void }) {
             <div
               key={e.id}
               data-mv-panel-event=""
-              className="absolute end-2 overflow-hidden rounded px-1.5 py-0.5 text-xs leading-tight text-white"
+              className="absolute end-2 overflow-hidden rounded px-1.5 py-0.5 text-xs leading-tight"
               style={{
                 top: (b.startMinutes / 60) * HOUR_PX,
                 height: Math.max(18, ((b.endMinutes - b.startMinutes) / 60) * HOUR_PX - 2),
                 insetInlineStart: 56,
                 backgroundColor: colorOf(e),
+                color: readableTextOn(colorOf(e)),
               }}
               title={e.title}
             >
@@ -377,6 +382,7 @@ function ContactsPanel({ onClose }: { onClose: () => void }) {
       {searching && (
         <div className="px-4 pb-2">
           <input
+            aria-label={tContacts("search_placeholder")}
             autoFocus
             type="search"
             value={query}

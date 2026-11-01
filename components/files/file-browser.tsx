@@ -5,34 +5,45 @@ import { useTranslations } from "next-intl";
 import {
   Upload, FolderPlus, Download, Trash2, Pencil, Copy, Clipboard, Scissors, Info,
   FilePlus, CopyPlus, AlertCircle, FolderUp, Share2, SquarePen, Eye, FolderOpen,
-  RefreshCw, Star, StarOff, Plus, CheckSquare,
+  RefreshCw, Star, StarOff, Plus, CheckSquare, File, RotateCcw, FolderInput,
 } from "@/components/icons";
 import { useIsDesktop, useIsMobile, useMediaQuery } from "@/hooks/use-media-query";
 import { useContextMenu } from "@/hooks/use-context-menu";
+import { useRegisterCommands } from "@/lib/command-registry";
+import { formatShortcutCombo } from "@/lib/shortcut-keys";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu";
 import { Avatar } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
-import { NewFolderDialog } from "@/components/files/new-folder-dialog";
-import { RenameDialog } from "@/components/files/rename-dialog";
+import { PromptDialog } from "@/components/ui/prompt-dialog";
+import { NewFileDialog } from "@/components/files/new-file-dialog";
+import { FolderPickerDialog } from "@/components/files/folder-picker-dialog";
 import { fileNameProblem } from "@/lib/file-name-rules";
 import { EmptyFolder, NoSearchResults } from "@/components/files/file-empty-state";
+import { EmptyState } from "@/components/ui/empty-state";
 import { isAudioFile, isImageFile, isPdfFile, isTextFile, isVideoFile } from "@/components/files/file-icons";
-import { loadFilesSettings, saveFilesSettings, type FilesSettings } from "@/components/files/files-settings";
+import { useFilesSettings } from "@/components/files/files-settings";
 import { FilesSidebar, type CreateKind } from "@/components/files/files-sidebar";
 import { FilesHeader, type Crumb, type SortDir, type SortKey, type ViewMode } from "@/components/files/files-header";
 import { FileGridView, FileListView, type FileItemHandlers } from "@/components/files/file-views";
 import { FileDetailsPanel } from "@/components/files/file-details-panel";
 import { INTERNAL_DRAG_TYPE, anchorEvent, isInternalDrag, readDraggedNames } from "@/components/files/file-item-parts";
 import { ResizeHandle } from "@/components/layout/resize-handle";
+import { AppMain } from "@/components/layout/app-landmarks";
+import { useIsEmbedded } from "@/hooks/use-is-embedded";
 import { getDroppedFilesAndFolders } from "@/lib/webdav/drop-utils";
-import { resourceToView, useFileStore, type FileResource } from "@/stores/file-store";
+import { resourceToView, useFileStore, isSharedFilesPage, sharedFilePages, type FileResource } from "@/stores/file-store";
+import { TRASH_LOCATION, TRASH_PATH, isTrashLocation } from "@/lib/files-trash";
 import { PluginActions, usePluginActions } from "@/components/plugins/plugin-actions";
 import { toast } from "@/stores/toast-store";
 import { ShareCollectionDialog } from "@/components/settings/share-collection-dialog";
 import type { IJMAPClient } from "@/lib/jmap/client-interface";
 import type { FileNodeRights } from "@/lib/jmap/types";
 import type { FileResourceView } from "@/lib/plugin-types";
+import { isAppShortcutBlocked, isArrowKeyWidgetTarget } from "@/lib/keyboard";
+import { isSingleKeyShortcutOff } from "@/lib/single-key-shortcuts";
+
+const NO_FORMATS: string[] = [];
 
 interface ClipboardState {
   mode: "cut" | "copy";
@@ -61,11 +72,18 @@ interface FileBrowserProps {
   onUploadFiles: (files: File[]) => Promise<void>;
   onUploadFolder: (files: File[]) => Promise<void>;
   onCancelUpload: () => void;
+  /** Delete: into the trash, or for good when in the trash or a shared drive. */
   onDelete: (name: string) => Promise<void>;
   onBatchDelete: (names: string[]) => Promise<void>;
+  /** In the trash: put items back where they came from. */
+  onRestore?: (names: string[]) => Promise<void>;
+  /** In the trash: delete everything in it for good. */
+  onEmptyTrash?: () => void;
   onRename: (oldName: string, newName: string) => Promise<void>;
   onDownload: (name: string) => Promise<void>;
   onBatchDownload: (names: string[]) => Promise<void>;
+  /** Download items by id as one zip, e.g. a folder. */
+  onDownloadZip?: (ids: string[], zipName: string) => Promise<void>;
   onRefresh: () => Promise<void>;
   onToggleSelect: (name: string) => void;
   onClearSelection: () => void;
@@ -75,12 +93,17 @@ interface FileBrowserProps {
   onPaste: () => Promise<void>;
   /** Move listed items into a folder by id (null = the root). */
   onMoveTo: (names: string[], targetId: string | null) => Promise<void>;
+  /** Move a folder of the tree, which need not be listed, into a folder. */
+  onMoveNode?: (id: string, targetId: string | null) => Promise<void>;
   onPreviewImage: (name: string) => void;
   onPreviewFile: (name: string) => void;
   /** WOPI document editing (#425): whether a file can open in the document editor. */
   isOfficeEditable?: (name: string) => boolean;
   onEditFile?: (name: string) => void;
-  onCreateTextFile: (name: string) => Promise<void>;
+  /** "New file": empty text, or a blank document of a format in `newFileFormats`. */
+  onCreateFile: (name: string) => Promise<void>;
+  /** Document formats a WOPI editor can create besides .txt (#1393). */
+  newFileFormats?: string[];
   onDuplicate: (name: string) => Promise<void>;
   getImageUrl: (name: string) => Promise<string>;
   favorites: string[];
@@ -119,6 +142,16 @@ type MenuData = { kind: "item"; resource: FileResource } | { kind: "empty" } | {
 
 const SIDEBAR_DEFAULT_WIDTH = 256;
 
+/** A folder's path ("/Documents/Taxes") from the folder list. */
+function pathOfFolder(folders: FileResource[], folder: FileResource): string {
+  const names = [folder.name];
+  const byId = new Map(folders.map((f) => [f.id, f]));
+  for (let cur = folder.parentId ? byId.get(folder.parentId) : undefined; cur && names.length < 64; cur = cur.parentId ? byId.get(cur.parentId) : undefined) {
+    names.unshift(cur.name);
+  }
+  return "/" + names.join("/");
+}
+
 function isTypingTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
   if (!el) return false;
@@ -140,9 +173,12 @@ export function FileBrowser({
   onCancelUpload,
   onDelete,
   onBatchDelete,
+  onRestore,
+  onEmptyTrash,
   onRename,
   onDownload,
   onBatchDownload,
+  onDownloadZip,
   onRefresh,
   onToggleSelect,
   onClearSelection,
@@ -151,11 +187,13 @@ export function FileBrowser({
   onCopy,
   onPaste,
   onMoveTo,
+  onMoveNode,
   onPreviewImage,
   onPreviewFile,
   isOfficeEditable,
   onEditFile,
-  onCreateTextFile,
+  onCreateFile,
+  newFileFormats = NO_FORMATS,
   onDuplicate,
   getImageUrl,
   favorites,
@@ -177,11 +215,17 @@ export function FileBrowser({
   onShare,
 }: FileBrowserProps) {
   const t = useTranslations("files");
+  const newFileLabel = newFileFormats.length > 0 ? t("new_file") : t("new_text_file");
   const fileNameRules = useMemo(() => client?.getFileNameRules?.() ?? null, [client]);
   const validateFileName = useCallback((name: string) => {
     const problem = fileNameProblem(name, fileNameRules);
     if (!problem) return null;
-    return problem.kind === "chars" ? t("name_forbidden_chars", { chars: problem.chars }) : t("name_reserved");
+    switch (problem.kind) {
+      case "chars": return t("name_forbidden_chars", { chars: problem.chars });
+      case "control": return t("name_control_chars");
+      case "tooLong": return t("name_too_long");
+      case "reserved": return t("name_reserved");
+    }
   }, [fileNameRules, t]);
 
   // ---- Store-derived state ---------------------------------------------------
@@ -192,37 +236,26 @@ export function FileBrowser({
   const hasListed = useFileStore((s) => s.hasListed);
   const currentParentId = useFileStore((s) => s.currentParentId);
   const pathStack = useFileStore((s) => s.pathStack);
+  const trashCount = useFileStore((s) => s.trashCount);
+  // The trash lists deleted items: they can be restored, previewed or
+  // deleted for good, nothing else.
+  const inTrash = isTrashLocation(currentParentId);
   useEffect(() => {
     if (storeClient) void loadSharedRoots();
   }, [storeClient, loadSharedRoots]);
 
   // ---- Settings --------------------------------------------------------------
-  const [settings, setSettings] = useState<FilesSettings>(loadFilesSettings);
+  const [settings, updateSettings] = useFilesSettings();
   const [sortKey, setSortKey] = useState<SortKey>(() => settings.defaultSortKey);
   const [sortDir, setSortDir] = useState<SortDir>(() => settings.defaultSortDir);
+  // A new default order (Settings > Files, another device) applies at once.
   useEffect(() => {
-    const reload = () => {
-      const next = loadFilesSettings();
-      setSettings(next);
-      setSortKey(next.defaultSortKey);
-      setSortDir(next.defaultSortDir);
-    };
-    const handleStorage = (e: StorageEvent) => { if (e.key === "files-settings") reload(); };
-    // StorageEvent fires cross-tab, the custom event same-tab
-    window.addEventListener("storage", handleStorage);
-    window.addEventListener("files-settings-changed", reload);
-    return () => {
-      window.removeEventListener("storage", handleStorage);
-      window.removeEventListener("files-settings-changed", reload);
-    };
-  }, []);
+    setSortKey(settings.defaultSortKey);
+    setSortDir(settings.defaultSortDir);
+  }, [settings.defaultSortKey, settings.defaultSortDir]);
   const viewMode: ViewMode = settings.defaultViewMode;
-  const handleViewModeChange = useCallback((mode: ViewMode) => {
-    // The toggle and Settings > Files edit the same preference.
-    const next = { ...loadFilesSettings(), defaultViewMode: mode };
-    setSettings(next);
-    saveFilesSettings(next);
-  }, []);
+  // The toggle and Settings > Files edit the same preference.
+  const handleViewModeChange = useCallback((mode: ViewMode) => updateSettings({ defaultViewMode: mode }), [updateSettings]);
   const iconOptions = useMemo(() => ({
     showIcons: settings.showIcons,
     coloredIcons: settings.coloredIcons,
@@ -237,6 +270,11 @@ export function FileBrowser({
   const [narrowSidebarOpen, setNarrowSidebarOpen] = useState(false);
   useEffect(() => { if (!isNarrow) setNarrowSidebarOpen(false); }, [isNarrow]);
   useEffect(() => { setNarrowSidebarOpen(false); }, [currentPath]);
+  // Anything picked in the drawer closes it (R7).
+  const fromDrawer = <A extends unknown[], R>(action: (...args: A) => R) => (...args: A): R => {
+    setNarrowSidebarOpen(false);
+    return action(...args);
+  };
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     if (typeof window !== "undefined") {
       const saved = Number(localStorage.getItem("files-sidebar-width"));
@@ -263,6 +301,8 @@ export function FileBrowser({
   const [renameTarget, setRenameTarget] = useState<string | null>(null);
   const [renameFolder, setRenameFolder] = useState<FileResource | null>(null);
   const [shareTargetId, setShareTargetId] = useState<string | null>(null);
+  // "Move to…": listed items by name, or a folder of the tree by id.
+  const [moveTarget, setMoveTarget] = useState<{ names: string[] } | { folder: FileResource } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [focusedName, setFocusedName] = useState<string | null>(null);
   // The cursor outline follows a click or the arrow keys, but goes away once
@@ -320,21 +360,32 @@ export function FileBrowser({
   // it (not a shared-with-me node), and holds the mayShare right (owned nodes
   // report full rights; treat missing myRights as allowed).
   const canShare = useCallback((r: FileResource | null | undefined): boolean =>
-    !!(sharingEnabled && onShare && client && r && !r.isShared && (r.myRights?.mayShare ?? true)),
+    !!(sharingEnabled && onShare && client && r && !r.isShared && !r.isSymlink && (r.myRights?.mayShare ?? true)),
     [sharingEnabled, onShare, client]);
+  // Files have content to preview, open, download or duplicate. Folders and
+  // symlinks don't: a symlink row only supports rename, move and delete.
+  const hasContent = useCallback((name: string): boolean => {
+    const r = resources.find((res) => res.name === name);
+    return !!r && !r.isDirectory && !r.isSymlink;
+  }, [resources]);
   // Looked up by id so the dialog shows the shares as they change. A folder
   // shared from the tree is usually not in the listing, so fall back to it.
   const shareTarget = shareTargetId
     ? resources.find((r) => r.id === shareTargetId) ?? allFolders.find((r) => r.id === shareTargetId) ?? null
     : null;
 
-  // Whether the user may add items to the folder on screen.
+  // Whether the user may add items to the folder on screen. Nothing can be
+  // put on a page listing files shared on their own.
   const currentFolder = currentParentId ? allFolders.find((f) => f.id === currentParentId) : null;
-  const canCreate = !accountPickerMode && (currentFolder?.myRights?.mayAddChildren ?? true);
+  const canCreate = !accountPickerMode && !isSharedFilesPage(currentParentId) && !inTrash
+    && (currentFolder?.myRights?.mayAddChildren ?? true);
 
   // ---- Listing ---------------------------------------------------------------
   const displayResources = useMemo(() => {
-    let list = resources;
+    // In the trash the date column is when an item was deleted.
+    let list = inTrash
+      ? resources.map((r) => (r.trash?.deletedAt ? { ...r, lastModified: r.trash.deletedAt } : r))
+      : resources;
     if (!settings.showHiddenFiles) list = list.filter((r) => !r.name.startsWith("."));
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -358,7 +409,7 @@ export function FileBrowser({
       if (cmp === 0) cmp = a.name.localeCompare(b.name);
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [resources, settings.showHiddenFiles, searchQuery, sortKey, sortDir]);
+  }, [resources, inTrash, settings.showHiddenFiles, searchQuery, sortKey, sortDir]);
 
   // Folders other principals shared with the user, listed at the root next to
   // the user's own (#1181).
@@ -367,6 +418,14 @@ export function FileBrowser({
     const q = searchQuery.toLowerCase();
     return sharedRoots.filter((r) => r.isDirectory && (!q || r.name.toLowerCase().includes(q)));
   }, [currentPath, accountPickerMode, sharedRoots, searchQuery]);
+  // Files shared on their own are listed on one page per owner.
+  const sharedPagesAtRoot = useMemo(() => {
+    if (currentPath !== "/" || accountPickerMode) return [];
+    const q = searchQuery.toLowerCase();
+    return sharedFilePages(sharedRoots)
+      .map((page) => ({ ...page, name: t("shared_files_from", { name: page.ownerName }) }))
+      .filter((page) => !q || page.name.toLowerCase().includes(q));
+  }, [currentPath, accountPickerMode, sharedRoots, searchQuery, t]);
 
   const pathOf = useCallback((r: FileResource) => (currentPath === "/" ? `/${r.name}` : `${currentPath}/${r.name}`), [currentPath]);
   const starredPaths = useMemo(() => new Set(favorites), [favorites]);
@@ -382,12 +441,15 @@ export function FileBrowser({
     // Inside a folder someone shared with the user, the trail starts there.
     const insideShared = !!pathStack[1]?.id?.includes(":");
     const list: Crumb[] = [{ id: null, name: insideShared ? t("shared_with_me") : t("my_files"), path: "/" }];
+    if (inTrash) return [...list, { id: TRASH_LOCATION, name: t("trash"), path: TRASH_PATH }];
     segments.forEach((name, i) => {
       list.push({ id: pathStack[i + 1]?.id ?? null, name, path: "/" + segments.slice(0, i + 1).join("/") });
     });
     return list;
-  }, [currentPath, pathStack, t]);
+  }, [currentPath, pathStack, inTrash, t]);
   const folderName = crumbs[crumbs.length - 1].name;
+  const folderNameRef = useRef(folderName);
+  folderNameRef.current = folderName;
 
   const navigateCrumb = useCallback((crumb: Crumb) => {
     if (crumb.path === "/") {
@@ -411,6 +473,10 @@ export function FileBrowser({
 
   // ---- Opening ---------------------------------------------------------------
   const openResource = useCallback((resource: FileResource) => {
+    // A symlink has nothing to open (Stalwart 1.0).
+    if (resource.isSymlink) return;
+    // A deleted folder is restored before it is opened; a deleted file can be looked at.
+    if (resource.trash && (resource.isDirectory || !isPreviewable(resource.name))) return;
     if (resource.isDirectory) {
       onNavigate(pathOf(resource), resource.id);
     } else if (isOfficeEditable?.(resource.name) && onEditFile) {
@@ -428,6 +494,15 @@ export function FileBrowser({
     if (isImageFile(resource.name)) onPreviewImage(resource.name);
     else onPreviewFile(resource.name);
   }, [onPreviewImage, onPreviewFile]);
+
+  // Where a deleted item came from, as its row's tooltip in the trash.
+  const trashNote = useCallback((r: FileResource): string | undefined => {
+    if (!r.trash) return undefined;
+    const from = r.trash.fromParentId;
+    const folder = from ? allFolders.find((f) => f.id === from) : null;
+    const path = from === null ? t("my_files") : folder ? pathOfFolder(allFolders, folder) : null;
+    return path ? t("deleted_from", { folder: path }) : undefined;
+  }, [allFolders, t]);
 
   // ---- Selection -------------------------------------------------------------
   const selectRange = useCallback((from: string, to: string, additive: boolean) => {
@@ -476,10 +551,17 @@ export function FileBrowser({
   }, [onDelete, onBatchDelete]);
 
   const downloadNames = useCallback((names: string[]) => {
-    const files = names.filter((n) => !resources.find((r) => r.name === n)?.isDirectory);
+    const items = names.map((n) => resources.find((r) => r.name === n)).filter((r): r is FileResource => !!r && !r.isSymlink);
+    // Folders come as one zip, with any files picked next to them.
+    if (onDownloadZip && items.some((r) => r.isDirectory)) {
+      const zipName = items.length === 1 ? items[0].name : folderNameRef.current;
+      void onDownloadZip(items.map((r) => r.id), `${zipName}.zip`);
+      return;
+    }
+    const files = names.filter(hasContent);
     if (files.length === 1) void onDownload(files[0]);
     else if (files.length > 1) void onBatchDownload(files);
-  }, [resources, onDownload, onBatchDownload]);
+  }, [resources, hasContent, onDownload, onBatchDownload, onDownloadZip]);
 
   // ---- Drag and drop ---------------------------------------------------------
   const moveNames = useCallback((names: string[], targetId: string | null) => {
@@ -487,7 +569,7 @@ export function FileBrowser({
   }, [onMoveTo]);
 
   const itemDragProps = useCallback((resource: FileResource) => ({
-    draggable: !touch,
+    draggable: !touch && !inTrash,
     onDragStart: (e: React.DragEvent) => {
       const names = selectedResources.has(resource.name) ? [...selectedResources] : [resource.name];
       e.dataTransfer.setData(INTERNAL_DRAG_TYPE, JSON.stringify(names));
@@ -509,7 +591,7 @@ export function FileBrowser({
       const names = readDraggedNames(e).filter((n) => n !== resource.name);
       if (names.length > 0) moveNames(names, resource.id);
     },
-  }), [touch, selectedResources, moveNames]);
+  }), [touch, inTrash, selectedResources, moveNames]);
 
   const runUpload = useCallback(async (files: File[], asFolder: boolean) => {
     if (files.length === 0) return;
@@ -622,7 +704,11 @@ export function FileBrowser({
       anchorName.current = name;
       onSetSelection(new Set([name]));
     }
-    scrollAreaRef.current?.querySelector(`[data-resource="${CSS.escape(name)}"]`)?.scrollIntoView?.({ block: "nearest" });
+    // Real focus, not just a ring: screen readers follow DOM focus and read
+    // the item (WCAG 4.1.2). Each item is a roving tab stop.
+    const el = scrollAreaRef.current?.querySelector<HTMLElement>(`[data-resource="${CSS.escape(name)}"]`);
+    el?.focus({ preventScroll: true });
+    el?.scrollIntoView?.({ block: "nearest" });
   }, [displayResources, focusedName, selectRange, onSetSelection]);
 
   // Columns in the grid's file section, for Up/Down.
@@ -638,15 +724,16 @@ export function FileBrowser({
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (isTypingTarget(e.target)) return;
-      if (showNewFolder || showNewTextFile || renameTarget || renameFolder || shareTargetId) return;
+      if (isTypingTarget(e.target) || isAppShortcutBlocked(e)) return;
+      if (showNewFolder || showNewTextFile || renameTarget || renameFolder || shareTargetId || moveTarget) return;
       // A preview, editor or confirmation is open on top of the list.
       if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
       if (accountPickerMode) return;
       const mod = e.ctrlKey || e.metaKey;
       const selected = selectedList.map((r) => r.name);
 
-      if (mod && e.key.toLowerCase() === "f") {
+      // "/" as in Mail and Contacts; Ctrl/⌘+F as in a file manager.
+      if ((mod && e.key.toLowerCase() === "f") || (e.key === "/" && !mod && !e.altKey && !isSingleKeyShortcutOff(e))) {
         e.preventDefault();
         searchInputRef.current?.focus();
         return;
@@ -656,6 +743,7 @@ export function FileBrowser({
         selectAllVisible();
         return;
       }
+      if (inTrash && (mod || e.key === "F2") && ["c", "x", "v", "f2"].includes(e.key.toLowerCase())) return;
       if (mod && e.key.toLowerCase() === "c" && selected.length > 0) {
         if (window.getSelection()?.toString()) return;
         e.preventDefault();
@@ -673,11 +761,14 @@ export function FileBrowser({
         return;
       }
       if (e.key === "Escape") {
-        if (searchQuery) setSearchQuery("");
+        // The details panel over the list closes first (innermost layer, R8).
+        if (showDetails && isNarrow) toggleDetails(false);
+        else if (searchQuery) setSearchQuery("");
         else if (selected.length > 0) onClearSelection();
         return;
       }
-      if (e.key === "Delete" && selected.length > 0) {
+      // Backspace deletes too, as in Mail (⌘⌫ on a Mac); Alt+↑ goes up.
+      if ((e.key === "Delete" || e.key === "Backspace") && selected.length > 0) {
         e.preventDefault();
         deleteNames(selected);
         return;
@@ -697,11 +788,15 @@ export function FileBrowser({
         onToggleSelect(focusedName);
         return;
       }
-      if ((e.key === "Backspace" || (e.altKey && e.key === "ArrowUp")) && currentPath !== "/") {
+      if (e.altKey && e.key === "ArrowUp" && currentPath !== "/") {
         e.preventDefault();
         navigateUp();
         return;
       }
+      // A slider, tabs or a menu keeps its own arrows; the files grid itself
+      // is the widget these arrows belong to.
+      const inOwnList = e.target instanceof Node && !!scrollAreaRef.current?.contains(e.target);
+      if (e.key.startsWith("Arrow") && !inOwnList && isArrowKeyWidgetTarget(e)) return;
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
         const step = viewMode === "grid" ? gridColumns() : 1;
@@ -722,7 +817,8 @@ export function FileBrowser({
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [
-    showNewFolder, showNewTextFile, renameTarget, renameFolder, shareTargetId, accountPickerMode, selectedList, singleSelected,
+    showNewFolder, showNewTextFile, renameTarget, renameFolder, shareTargetId, moveTarget, accountPickerMode, selectedList, singleSelected, inTrash,
+    showDetails, isNarrow, toggleDetails,
     selectAllVisible, onCopy, onCut, onPaste, clipboard, searchQuery, onClearSelection, deleteNames, openResource,
     focusedName, onToggleSelect, currentPath, navigateUp, viewMode, gridColumns, moveFocus,
   ]);
@@ -750,17 +846,49 @@ export function FileBrowser({
     ? selectedList
     : menuData?.kind === "item" ? [menuData.resource] : [];
 
+  // Items move within the own drive; a shared drive's folders are not in the picker.
+  const canMove = !inTrash && !accountPickerMode && !currentParentId?.includes(":");
+
   const renderItemMenu = (resource: FileResource) => {
-    if (menuSelection.length > 1) {
+    if (inTrash) {
       const names = menuSelection.map((r) => r.name);
-      const fileCount = menuSelection.filter((r) => !r.isDirectory).length;
+      const one = menuSelection.length === 1 ? menuSelection[0] : null;
       return (
         <>
-          {fileCount > 0 && (
-            <ContextMenuItem icon={Download} label={t("download_count", { count: fileCount })} onClick={() => { closeMenu(); downloadNames(names); }} />
+          {onRestore && (
+            <ContextMenuItem icon={RotateCcw} label={t("restore")} onClick={() => { closeMenu(); void onRestore(names); }} />
           )}
-          <ContextMenuItem icon={Scissors} label={t("cut")} shortcut="Ctrl+X" onClick={() => { closeMenu(); onCut(names); }} />
-          <ContextMenuItem icon={Copy} label={t("copy")} shortcut="Ctrl+C" onClick={() => { closeMenu(); onCopy(names); }} />
+          {one && !one.isDirectory && !one.isSymlink && isPreviewable(one.name) && (
+            <ContextMenuItem icon={Eye} label={t("preview")} onClick={() => { closeMenu(); previewResource(one); }} />
+          )}
+          {one && !one.isDirectory && !one.isSymlink && (
+            <ContextMenuItem icon={Download} label={t("download")} onClick={() => { closeMenu(); void onDownload(one.name); }} />
+          )}
+          <ContextMenuSeparator />
+          <ContextMenuItem icon={Trash2} label={t("delete_forever")} destructive onClick={() => { closeMenu(); deleteNames(names); }} />
+        </>
+      );
+    }
+    if (menuSelection.length > 1) {
+      const names = menuSelection.map((r) => r.name);
+      const fileCount = menuSelection.filter((r) => !r.isDirectory && !r.isSymlink).length;
+      const withFolders = !!onDownloadZip && menuSelection.some((r) => r.isDirectory);
+      return (
+        <>
+          {(fileCount > 0 || withFolders) && (
+            <ContextMenuItem
+              icon={Download}
+              label={withFolders ? t("download_zip") : t("download_count", { count: fileCount })}
+              onClick={() => { closeMenu(); downloadNames(names); }}
+            />
+          )}
+          {canMove && (
+            <ContextMenuItem icon={FolderInput} label={t("move_to")} onClick={() => { closeMenu(); setMoveTarget({ names }); }} />
+          )}
+          <ContextMenuItem icon={Scissors} label={t("cut")} shortcut={formatShortcutCombo("Mod + X")} onClick={() => { closeMenu(); onCut(names); }} />
+          {menuSelection.some((r) => !r.isSymlink) && (
+            <ContextMenuItem icon={Copy} label={t("copy")} shortcut={formatShortcutCombo("Mod + C")} onClick={() => { closeMenu(); onCopy(names); }} />
+          )}
           <ContextMenuSeparator />
           <ContextMenuItem icon={Trash2} label={t("delete_count", { count: names.length })} destructive onClick={() => { closeMenu(); deleteNames(names); }} />
           <FilePluginMenuEntries files={menuSelection.map((r) => resourceToView(r, currentPath))} onRan={closeMenu} />
@@ -771,17 +899,18 @@ export function FileBrowser({
     const starred = starredPaths.has(path);
     return (
       <>
+        {/* R6 order, the same as the folder tree's menu: Open, Edit, Share,
+            Star, Rename, Duplicate, Move to…, Cut, Copy, Download, Details, Delete. */}
         {resource.isDirectory ? (
           <ContextMenuItem icon={FolderOpen} label={t("open")} onClick={() => { closeMenu(); openResource(resource); }} />
-        ) : (
+        ) : resource.isSymlink ? null : (
           <>
-            {isOfficeEditable?.(resource.name) && onEditFile && (
-              <ContextMenuItem icon={SquarePen} label={t("office_edit")} onClick={() => { closeMenu(); onEditFile(resource.name); }} />
-            )}
             {isPreviewable(resource.name) && (
               <ContextMenuItem icon={Eye} label={t("preview")} onClick={() => { closeMenu(); previewResource(resource); }} />
             )}
-            <ContextMenuItem icon={Download} label={t("download")} onClick={() => { closeMenu(); void onDownload(resource.name); }} />
+            {isOfficeEditable?.(resource.name) && onEditFile && (
+              <ContextMenuItem icon={SquarePen} label={t("office_edit")} onClick={() => { closeMenu(); onEditFile(resource.name); }} />
+            )}
           </>
         )}
         {(canShare(resource) || (resource.isDirectory && !resource.isShared)) && <ContextMenuSeparator />}
@@ -797,11 +926,22 @@ export function FileBrowser({
         )}
         <ContextMenuSeparator />
         <ContextMenuItem icon={Pencil} label={t("rename")} shortcut="F2" onClick={() => { closeMenu(); setRenameTarget(resource.name); }} />
-        {!resource.isDirectory && (
+        {!resource.isDirectory && !resource.isSymlink && (
           <ContextMenuItem icon={CopyPlus} label={t("duplicate")} onClick={() => { closeMenu(); void onDuplicate(resource.name); }} />
         )}
-        <ContextMenuItem icon={Scissors} label={t("cut")} shortcut="Ctrl+X" onClick={() => { closeMenu(); onCut([resource.name]); }} />
-        <ContextMenuItem icon={Copy} label={t("copy")} shortcut="Ctrl+C" onClick={() => { closeMenu(); onCopy([resource.name]); }} />
+        {canMove && (
+          <ContextMenuItem icon={FolderInput} label={t("move_to")} onClick={() => { closeMenu(); setMoveTarget({ names: [resource.name] }); }} />
+        )}
+        <ContextMenuItem icon={Scissors} label={t("cut")} shortcut={formatShortcutCombo("Mod + X")} onClick={() => { closeMenu(); onCut([resource.name]); }} />
+        {!resource.isSymlink && (
+          <ContextMenuItem icon={Copy} label={t("copy")} shortcut={formatShortcutCombo("Mod + C")} onClick={() => { closeMenu(); onCopy([resource.name]); }} />
+        )}
+        {resource.isDirectory && onDownloadZip && (
+          <ContextMenuItem icon={Download} label={t("download_zip")} onClick={() => { closeMenu(); downloadNames([resource.name]); }} />
+        )}
+        {!resource.isDirectory && !resource.isSymlink && (
+          <ContextMenuItem icon={Download} label={t("download")} onClick={() => { closeMenu(); void onDownload(resource.name); }} />
+        )}
         <ContextMenuItem icon={Info} label={t("details")} onClick={() => { closeMenu(); toggleDetails(true); }} />
         <ContextMenuSeparator />
         <ContextMenuItem icon={Trash2} label={t("delete")} shortcut="Del" destructive onClick={() => { closeMenu(); deleteNames([resource.name]); }} />
@@ -820,7 +960,7 @@ export function FileBrowser({
       <ContextMenuItem icon={FolderUp} label={t("upload_folder")} onClick={() => { closeMenu(); folderInputRef.current?.click(); }} />
       <ContextMenuSeparator />
       <ContextMenuItem icon={FolderPlus} label={t("new_folder")} onClick={() => { closeMenu(); setShowNewFolder(true); }} />
-      <ContextMenuItem icon={FilePlus} label={t("new_text_file")} onClick={() => { closeMenu(); setShowNewTextFile(true); }} />
+      <ContextMenuItem icon={FilePlus} label={newFileLabel} onClick={() => { closeMenu(); setShowNewTextFile(true); }} />
     </>
   );
 
@@ -833,6 +973,8 @@ export function FileBrowser({
     onShare: (r) => setShareTargetId(r.id),
     canShare,
     dragProps: itemDragProps,
+    // Tab onto an item: the arrows go on from there.
+    onFocusItem: (r) => setFocusedName(r.name),
   }), [handleSelectClick, handleToggleSelect, openResource, openItemMenu, onDownload, canShare, itemDragProps]);
 
   const handleSort = useCallback((key: SortKey) => {
@@ -852,6 +994,20 @@ export function FileBrowser({
     else folderInputRef.current?.click();
   }, [currentParentId, onNavigate]);
 
+  // ---- Command palette ---------------------------------------------------------
+  const tSidebar = useTranslations("sidebar");
+  const tShell = useTranslations("shell");
+  const isEmbedded = useIsEmbedded();
+  useRegisterCommands(tSidebar("files"), [
+    { id: "upload-files", label: t("upload_files"), icon: Upload, run: () => fileInputRef.current?.click(), when: () => canCreate },
+    { id: "upload-folder", label: t("upload_folder"), icon: FolderUp, run: () => folderInputRef.current?.click(), when: () => canCreate },
+    { id: "new-folder", label: t("new_folder"), icon: FolderPlus, run: () => setShowNewFolder(true), when: () => canCreate },
+    { id: "new-text-file", label: newFileLabel, icon: FilePlus, run: () => setShowNewTextFile(true), when: () => canCreate },
+    { id: "trash", label: t("trash"), icon: Trash2, run: () => onNavigate(TRASH_PATH, TRASH_LOCATION), when: () => !inTrash && !accountPickerMode },
+    { id: "empty-trash", label: t("empty_trash"), icon: Trash2, run: () => onEmptyTrash?.(), when: () => inTrash && trashCount > 0 && !!onEmptyTrash },
+    { id: "refresh", label: t("refresh"), icon: RefreshCw, run: () => void onRefresh() },
+  ]);
+
   // ---- Rendering -------------------------------------------------------------
   const sidebar = !accountPickerMode && (
     <FilesSidebar
@@ -864,30 +1020,36 @@ export function FileBrowser({
       canCreate={canCreate}
       onNavigate={onNavigate}
       onOpenRecent={onOpenRecent}
-      onUploadFiles={() => fileInputRef.current?.click()}
-      onUploadFolder={() => folderInputRef.current?.click()}
-      onNewFolder={() => setShowNewFolder(true)}
-      onNewTextFile={() => setShowNewTextFile(true)}
+      onUploadFiles={fromDrawer(() => fileInputRef.current?.click())}
+      onUploadFolder={fromDrawer(() => folderInputRef.current?.click())}
+      onNewFolder={fromDrawer(() => setShowNewFolder(true))}
+      onNewTextFile={fromDrawer(() => setShowNewTextFile(true))}
+      newFileLabel={newFileLabel}
       onToggleFavorite={onToggleFavorite}
       onDropItems={moveNames}
       canShare={canShare}
-      onShare={(r) => setShareTargetId(r.id)}
-      onCreateIn={createIn}
-      onRenameFolder={setRenameFolder}
-      onDeleteFolder={(folder) => void onDeleteNode(folder.id, folder.name)}
-      onRevealRecent={(id) => void onRevealNode(id)}
-      onDownloadRecent={(id) => void onDownloadNode(id)}
+      onShare={fromDrawer((r: FileResource) => setShareTargetId(r.id))}
+      onCreateIn={fromDrawer(createIn)}
+      onRenameFolder={fromDrawer(setRenameFolder)}
+      onDownloadFolder={onDownloadZip ? (folder: FileResource) => void onDownloadZip([folder.id], `${folder.name}.zip`) : undefined}
+      onMoveFolder={onMoveNode ? fromDrawer((folder: FileResource) => setMoveTarget({ folder })) : undefined}
+      onDeleteFolder={fromDrawer((folder: FileResource) => void onDeleteNode(folder.id, folder.name))}
+      onRevealRecent={fromDrawer((id: string) => void onRevealNode(id))}
+      onDownloadRecent={fromDrawer((id: string) => void onDownloadNode(id))}
       onRemoveRecent={onRemoveRecent}
+      trashCount={trashCount}
+      onOpenTrash={fromDrawer(() => onNavigate(TRASH_PATH, TRASH_LOCATION))}
+      onDropToTrash={(names) => deleteNames(names)}
     />
   );
 
-  const showEmpty = !isLoading && !error && displayResources.length === 0 && sharedAtRoot.length === 0;
+  const showEmpty = !isLoading && !error && displayResources.length === 0 && sharedAtRoot.length === 0 && sharedPagesAtRoot.length === 0;
 
   const listing = (() => {
     if (accountPickerMode) {
       return accountFolders && accountFolders.length > 0 && onSelectAccount ? (
         <div className="p-4">
-          <h3 className="text-xs font-medium text-muted-foreground mb-2 px-0.5">{t("choose_account")}</h3>
+          <h2 className="text-xs font-medium text-muted-foreground mb-2 px-0.5">{t("choose_account")}</h2>
           <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(14rem,1fr))]">
             {accountFolders.map((acc) => (
               <button
@@ -916,6 +1078,9 @@ export function FileBrowser({
     // Until the first listing is in, an empty list means "not loaded yet".
     if ((isLoading || !hasListed) && resources.length === 0) return <ListSkeleton />;
     if (showEmpty && searchQuery) return <NoSearchResults query={searchQuery} onClear={() => setSearchQuery("")} />;
+    if (showEmpty && inTrash) {
+      return <EmptyState icon={Trash2} title={t("trash_empty_title")} description={t("trash_empty_hint")} />;
+    }
     if (showEmpty) {
       return (
         <EmptyFolder
@@ -930,6 +1095,10 @@ export function FileBrowser({
       resources: displayResources,
       selected: selectedResources,
       focusedName: focusedName && (keyboardNav || selectedResources.has(focusedName)) ? focusedName : null,
+      // The one item Tab lands on: the last one moved to, else the first.
+      tabStopName: focusedName && displayResources.some((r) => r.name === focusedName)
+        ? focusedName
+        : displayResources[0]?.name ?? null,
       dropTarget,
       cutNames,
       starredPaths,
@@ -938,6 +1107,7 @@ export function FileBrowser({
       iconOptions,
       getImageUrl,
       handlers,
+      itemNote: inTrash ? trashNote : undefined,
     };
     return (
       <>
@@ -952,10 +1122,16 @@ export function FileBrowser({
             allSelected={allSelected}
             someSelected={someSelected}
             onToggleAll={() => (allSelected ? onClearSelection() : selectAllVisible())}
+            dateLabel={inTrash ? t("deleted") : undefined}
           />
         ))}
-        {sharedAtRoot.length > 0 && (
-          <SharedWithMe folders={sharedAtRoot} onOpen={(r) => onNavigate(`/${r.name}`, r.id)} iconOptions={iconOptions} />
+        {(sharedAtRoot.length > 0 || sharedPagesAtRoot.length > 0) && (
+          <SharedWithMe
+            folders={sharedAtRoot}
+            pages={sharedPagesAtRoot}
+            onOpen={(r) => onNavigate(`/${r.name}`, r.id)}
+            iconOptions={iconOptions}
+          />
         )}
       </>
     );
@@ -970,8 +1146,8 @@ export function FileBrowser({
       path={singleSelected ? pathOf(singleSelected) : currentPath}
       isStarred={singleSelected ? starredPaths.has(pathOf(singleSelected)) : false}
       canShare={canShare(singleSelected)}
-      canPreview={!!singleSelected && isPreviewable(singleSelected.name)}
-      canEdit={!!singleSelected && !!onEditFile && !!isOfficeEditable?.(singleSelected.name)}
+      canPreview={!!singleSelected && !singleSelected.isSymlink && isPreviewable(singleSelected.name)}
+      canEdit={!!singleSelected && !singleSelected.isSymlink && !!onEditFile && !!isOfficeEditable?.(singleSelected.name)}
       pluginFile={singleSelected ? selectedViews[0] : null}
       iconOptions={iconOptions}
       getImageUrl={getImageUrl}
@@ -988,16 +1164,36 @@ export function FileBrowser({
     />
   );
 
-  const selectionActions = selectedList.length > 0 ? {
+  const selectionActions = selectedList.length > 0 && inTrash ? {
     count: selectedList.length,
-    fileCount: selectedList.filter((r) => !r.isDirectory).length,
-    canOpen: !!singleSelected && (singleSelected.isDirectory || isPreviewable(singleSelected.name) || !!isOfficeEditable?.(singleSelected.name)),
+    fileCount: 0,
+    canOpen: false,
+    canRename: false,
+    canShare: false,
+    trash: true,
+    onRestore: onRestore ? () => void onRestore(selectedList.map((r) => r.name)) : undefined,
+    onOpen: () => {},
+    onDownload: () => {},
+    onShare: () => {},
+    onRename: () => {},
+    onCut: () => {},
+    onCopy: () => {},
+    onDelete: () => deleteNames(selectedList.map((r) => r.name)),
+    onClear: onClearSelection,
+    pluginFiles: [],
+  } : selectedList.length > 0 ? {
+    count: selectedList.length,
+    // Folders download as a zip.
+    fileCount: selectedList.filter((r) => !r.isSymlink && (!r.isDirectory || !!onDownloadZip)).length,
+    canOpen: !!singleSelected && !singleSelected.isSymlink
+      && (singleSelected.isDirectory || isPreviewable(singleSelected.name) || !!isOfficeEditable?.(singleSelected.name)),
     canRename: !!singleSelected,
     canShare: !!singleSelected && canShare(singleSelected),
     onOpen: () => singleSelected && openResource(singleSelected),
     onDownload: () => downloadNames(selectedList.map((r) => r.name)),
     onShare: () => singleSelected && setShareTargetId(singleSelected.id),
     onRename: () => singleSelected && setRenameTarget(singleSelected.name),
+    onMoveTo: canMove ? () => setMoveTarget({ names: selectedList.map((r) => r.name) }) : undefined,
     onCut: () => onCut(selectedList.map((r) => r.name)),
     onCopy: () => onCopy(selectedList.map((r) => r.name)),
     onDelete: () => deleteNames(selectedList.map((r) => r.name)),
@@ -1007,31 +1203,40 @@ export function FileBrowser({
   } : null;
 
   return (
-    <div className="relative flex flex-1 min-h-0">
+    // Clips the closed drawer, so it never sits over the nav rail.
+    <div className="relative flex flex-1 min-h-0 overflow-hidden">
       {/* Folder sidebar: in flow on desktop, a drawer on narrow panes */}
       {sidebar && isNarrow && narrowSidebarOpen && (
         <div className="absolute inset-0 bg-black/50 z-40" onClick={() => setNarrowSidebarOpen(false)} />
       )}
       {sidebar && (isNarrow ? (
         <div
+          data-testid="files-sidebar-drawer"
+          data-pane="sidebar"
           className={cn(
             "absolute inset-y-0 start-0 z-50 w-72 border-e border-border",
-            "transform transition-transform duration-300 ease-in-out",
-            !narrowSidebarOpen && "-translate-x-full rtl:translate-x-full",
+            "transform transition-[transform,visibility] duration-300 ease-in-out",
+            !narrowSidebarOpen && "invisible -translate-x-full rtl:translate-x-full",
           )}
-          aria-hidden={!narrowSidebarOpen}
+          // Closed, the drawer is out of reach: no clicks, no Tab stops.
+          inert={!narrowSidebarOpen}
         >
           {sidebar}
         </div>
       ) : (
         <>
           <div
+            data-pane="sidebar"
             className={cn("border-e border-border flex-shrink-0", !isResizing && "transition-[width] duration-300")}
             style={{ width: `${sidebarWidth}px` }}
           >
             {sidebar}
           </div>
           <ResizeHandle
+            pane="sidebar"
+            value={sidebarWidth}
+            min={180}
+            max={400}
             onResizeStart={() => { dragStartWidth.current = sidebarWidth; setIsResizing(true); }}
             onResize={(delta) => setSidebarWidth(Math.max(180, Math.min(400, dragStartWidth.current + delta)))}
             onResizeEnd={() => {
@@ -1043,7 +1248,11 @@ export function FileBrowser({
         </>
       ))}
 
-      <div className="flex flex-col flex-1 min-w-0">
+      <AppMain
+        embedded={isEmbedded}
+        heading={tShell("heading", { place: folderName, app: tSidebar("files") })}
+        className="flex flex-col flex-1 min-w-0"
+      >
         <FilesHeader
           crumbs={crumbs}
           accountLabel={accountLabel}
@@ -1069,13 +1278,14 @@ export function FileBrowser({
           compact={isMobile}
           toolsHidden={accountPickerMode}
           selection={selectionActions}
+          emptyTrash={inTrash && onEmptyTrash ? { onEmpty: onEmptyTrash, disabled: trashCount === 0 } : undefined}
         />
 
         {error && (
           <div role="alert" className="mx-4 mt-3 px-3 py-2 rounded-md bg-destructive/10 text-destructive text-sm flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span className="flex-1">{error}</span>
-            <Button variant="ghost" size="sm" className="h-7 text-destructive hover:text-destructive shrink-0" onClick={() => void onRefresh()}>
+            <Button variant="ghost" size="xs" className="text-destructive hover:text-destructive shrink-0" onClick={() => void onRefresh()}>
               <RefreshCw className="w-3.5 h-3.5 me-1" />
               {t("retry")}
             </Button>
@@ -1126,12 +1336,16 @@ export function FileBrowser({
             </div>
           )}
 
+          {/* Over the list on a narrow pane: a backdrop that closes it, as for the drawer. */}
+          {detailsPanel && isNarrow && (
+            <div className="absolute inset-0 z-20 bg-black/30" aria-hidden onClick={() => toggleDetails(false)} />
+          )}
           {detailsPanel}
 
           {isNarrow && canCreate && !selectionActions && (
             <Button
-              size="icon"
-              className="absolute bottom-4 end-4 z-20 h-12 w-12 rounded-full shadow-lg"
+              size="icon-lg"
+              className="absolute bottom-4 end-4 z-20 rounded-full shadow-lg"
               aria-label={t("new")}
               onClick={(e) => menu.openContextMenu(anchorEvent(e.currentTarget, "end"), { kind: "new" })}
             >
@@ -1140,7 +1354,7 @@ export function FileBrowser({
           )}
 
         </div>
-      </div>
+      </AppMain>
 
       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleInputChange(false)} />
       <input
@@ -1160,66 +1374,83 @@ export function FileBrowser({
             {clipboard && canCreate && (
               <>
                 <ContextMenuSeparator />
-                <ContextMenuItem icon={Clipboard} label={t("paste")} shortcut="Ctrl+V" onClick={() => { closeMenu(); void onPaste(); }} />
+                <ContextMenuItem icon={Clipboard} label={t("paste")} shortcut={formatShortcutCombo("Mod + V")} onClick={() => { closeMenu(); void onPaste(); }} />
               </>
             )}
             <ContextMenuSeparator />
             {displayResources.length > 0 && (
-              <ContextMenuItem icon={CheckSquare} label={t("select_all")} shortcut="Ctrl+A" onClick={() => { closeMenu(); selectAllVisible(); }} />
+              <ContextMenuItem icon={CheckSquare} label={t("select_all")} shortcut={formatShortcutCombo("Mod + A")} onClick={() => { closeMenu(); selectAllVisible(); }} />
             )}
             <ContextMenuItem icon={RefreshCw} label={t("refresh")} onClick={() => { closeMenu(); void onRefresh(); }} />
           </>
         )}
       </ContextMenu>
 
-      {showNewFolder && (
-        <NewFolderDialog
-          onConfirm={async (name: string) => {
-            await onCreateFolder(name);
-            setShowNewFolder(false);
-          }}
-          onCancel={() => setShowNewFolder(false)}
-          validate={validateFileName}
-        />
-      )}
+      <PromptDialog
+        isOpen={showNewFolder}
+        onClose={() => setShowNewFolder(false)}
+        title={t("new_folder")}
+        placeholder={t("new_folder_name")}
+        confirmText={t("create")}
+        cancelText={t("cancel")}
+        validate={validateFileName}
+        onSubmit={(name) => void onCreateFolder(name)}
+      />
 
-      {showNewTextFile && (
-        <RenameDialog
-          currentName="new-file.txt"
-          title={t("new_text_file")}
-          label={t("file_name")}
-          onConfirm={async (name: string) => {
-            await onCreateTextFile(name);
-            setShowNewTextFile(false);
-          }}
-          onCancel={() => setShowNewTextFile(false)}
-          validate={validateFileName}
-        />
-      )}
+      <NewFileDialog
+        isOpen={showNewTextFile}
+        onClose={() => setShowNewTextFile(false)}
+        formats={newFileFormats}
+        validate={validateFileName}
+        onSubmit={(name) => void onCreateFile(name)}
+      />
 
-      {renameTarget && (
-        <RenameDialog
-          currentName={renameTarget}
-          onConfirm={async (newName: string) => {
-            await onRename(renameTarget, newName);
-            setRenameTarget(null);
-          }}
-          onCancel={() => setRenameTarget(null)}
-          validate={validateFileName}
-        />
-      )}
+      <PromptDialog
+        isOpen={renameTarget !== null}
+        onClose={() => setRenameTarget(null)}
+        title={t("rename_title")}
+        placeholder={t("new_name")}
+        defaultValue={renameTarget ?? ""}
+        // A file keeps its extension unless the user means to change it.
+        selectBaseName={!resources.find((r) => r.name === renameTarget)?.isDirectory}
+        confirmText={t("save")}
+        cancelText={t("cancel")}
+        validate={validateFileName}
+        onSubmit={(newName) => {
+          if (renameTarget !== null && newName !== renameTarget) void onRename(renameTarget, newName);
+        }}
+      />
 
-      {renameFolder && (
-        <RenameDialog
-          currentName={renameFolder.name}
-          onConfirm={async (newName: string) => {
-            await onRenameNode(renameFolder.id, newName);
-            setRenameFolder(null);
-          }}
-          onCancel={() => setRenameFolder(null)}
-          validate={validateFileName}
-        />
-      )}
+      <PromptDialog
+        isOpen={renameFolder !== null}
+        onClose={() => setRenameFolder(null)}
+        title={t("rename_title")}
+        placeholder={t("new_name")}
+        defaultValue={renameFolder?.name ?? ""}
+        confirmText={t("save")}
+        cancelText={t("cancel")}
+        validate={validateFileName}
+        onSubmit={(newName) => {
+          if (renameFolder && newName !== renameFolder.name) void onRenameNode(renameFolder.id, newName);
+        }}
+      />
+
+      <FolderPickerDialog
+        isOpen={moveTarget !== null}
+        onClose={() => setMoveTarget(null)}
+        title={t("move_to_title")}
+        confirmText={t("move_here")}
+        folders={allFolders.filter((f) => !f.isShared && !f.id.includes(":"))}
+        excludeIds={new Set(moveTarget && "folder" in moveTarget
+          ? [moveTarget.folder.id]
+          : (moveTarget?.names ?? []).map((n) => resources.find((r) => r.name === n)).filter((r) => r?.isDirectory).map((r) => r!.id))}
+        currentId={moveTarget && "folder" in moveTarget ? moveTarget.folder.parentId ?? null : currentParentId}
+        onPick={(targetId) => {
+          if (!moveTarget) return;
+          if ("folder" in moveTarget) void onMoveNode?.(moveTarget.folder.id, targetId);
+          else void onMoveTo(moveTarget.names, targetId);
+        }}
+      />
 
       {shareTarget && client && onShare && (
         <ShareCollectionDialog
@@ -1238,18 +1469,20 @@ export function FileBrowser({
   );
 }
 
-function SharedWithMe({ folders, onOpen, iconOptions }: {
+function SharedWithMe({ folders, pages, onOpen, iconOptions }: {
   folders: FileResource[];
-  onOpen: (r: FileResource) => void;
+  /** Pages of files shared on their own, one per owner. */
+  pages: { id: string; name: string; ownerName: string }[];
+  onOpen: (r: { id: string; name: string }) => void;
   iconOptions: { showIcons: boolean; coloredIcons: boolean };
 }) {
   const t = useTranslations("files");
   return (
     <section aria-label={t("shared_with_me")} className="px-4 pt-5 pb-4">
-      <h3 className="text-xs font-medium text-muted-foreground mb-2 px-0.5 flex items-center gap-1.5">
+      <h2 className="text-xs font-medium text-muted-foreground mb-2 px-0.5 flex items-center gap-1.5">
         <Share2 className="w-3 h-3" />
         {t("shared_with_me")}
-      </h3>
+      </h2>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-2">
         {folders.map((folder) => (
           <button
@@ -1263,6 +1496,21 @@ function SharedWithMe({ folders, onOpen, iconOptions }: {
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium">{folder.name}</span>
               {folder.ownerName && <span className="block truncate text-xs text-muted-foreground">{folder.ownerName}</span>}
+            </span>
+          </button>
+        ))}
+        {pages.map((page) => (
+          <button
+            key={page.id}
+            type="button"
+            onClick={() => onOpen(page)}
+            title={t("shared_by", { name: page.ownerName })}
+            className="flex items-center gap-2.5 h-12 px-3 rounded-lg border border-border hover:bg-muted/60 transition-colors text-start min-w-0"
+          >
+            {iconOptions.showIcons && <File className={cn("w-5 h-5 shrink-0", iconOptions.coloredIcons ? "text-primary" : "text-muted-foreground")} />}
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium">{page.name}</span>
+              <span className="block truncate text-xs text-muted-foreground">{page.ownerName}</span>
             </span>
           </button>
         ))}

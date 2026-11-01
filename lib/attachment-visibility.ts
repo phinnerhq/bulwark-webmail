@@ -14,10 +14,21 @@
  */
 
 /**
- * The exact pattern the viewers rewrite to blob URLs, so "referenced" here
- * means "rendered" and a chip is only ever hidden for a part the body shows.
+ * The exact pattern the viewers rewrite to blob URLs (rewriteCidReferences),
+ * so "referenced" here means "rendered" and a chip is only ever hidden for a
+ * part the body shows. A reference ends at `<`/`>` too: an unquoted
+ * `<img src=cid:logo>` would otherwise take the rest of the markup with it.
  */
-const CID_REFERENCE = /\bcid:([^"'\s)]+)/gi;
+const CID_REFERENCE = /\bcid:([^"'\s)<>]+)/gi;
+
+/**
+ * Swaps every `cid:` reference in a raw HTML body for the URL fetched for that
+ * part, or `fallback` when there is none.
+ */
+export function rewriteCidReferences(html: string, urls: Readonly<Record<string, string>>, fallback: string): string {
+  return html.replace(CID_REFERENCE, (_match, cid: string) =>
+    (Object.prototype.hasOwnProperty.call(urls, cid) ? urls[cid] : fallback));
+}
 
 const EMPTY: ReadonlySet<string> = new Set();
 
@@ -44,6 +55,23 @@ export function collectReferencedCids(html: string | null | undefined): Readonly
     cids.add(match[1]);
   }
   return cids;
+}
+
+/**
+ * Machine-readable report parts: the delivery status of a bounce (RFC 3464),
+ * the disposition of a read receipt (RFC 8098) and their RFC 6533 UTF-8
+ * forms. A multipart/report needs them, but they are not files anyone
+ * attached, so no view lists them and a forward leaves them out.
+ */
+const REPORT_PART_TYPES: ReadonlySet<string> = new Set([
+  'message/delivery-status',
+  'message/disposition-notification',
+  'message/global-delivery-status',
+  'message/global-disposition-notification',
+]);
+
+export function isReportPart(type: string | null | undefined): boolean {
+  return REPORT_PART_TYPES.has((type || '').toLowerCase());
 }
 
 export interface AttachmentPartLike {

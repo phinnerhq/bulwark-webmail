@@ -14,7 +14,7 @@ vi.mock('@/lib/browser-navigation', () => ({
 }));
 vi.mock('next/link', () => ({ default: () => null }));
 
-import { installVersion } from '../_tabs/marketplace';
+import { installVersion } from '../_pages/marketplace';
 
 const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
 const BODY = { slug: 'jitsi-meet', version: '2.0.9', type: 'plugin' as const };
@@ -28,8 +28,16 @@ describe('installVersion', () => {
   it('asks before installing an older version and repeats with force when the admin agrees', async () => {
     responses = [json({ error: 'Version 2.0.9 is older than the installed 2.1.0.', downgrade: { installedVersion: '2.1.0' } }, 409), json({ warnings: [] })];
     const asked: string[] = [];
-    const result = await installVersion(BODY, (message) => { asked.push(message); return true; });
-    expect(asked).toEqual(['Version 2.0.9 is older than the installed 2.1.0.\n\nInstall the older version anyway?']);
+    const result = await installVersion(BODY, (q) => { asked.push(`${q.title} ${q.message}`); return true; });
+    expect(asked).toEqual(['Install the older version anyway? Version 2.0.9 is older than the installed 2.1.0.']);
+    expect(calls.map((c) => c.body.force)).toEqual([undefined, true]);
+    expect(result.ok).toBe(true);
+  });
+
+  // The question is the page's ConfirmDialog, not window.confirm.
+  it('waits for the answer of the page dialog', async () => {
+    responses = [json({ error: 'withdrawn', yanked: { reason: null } }, 409), json({ warnings: [] })];
+    const result = await installVersion(BODY, async (q) => q.title === 'Install it anyway?');
     expect(calls.map((c) => c.body.force)).toEqual([undefined, true]);
     expect(result.ok).toBe(true);
   });

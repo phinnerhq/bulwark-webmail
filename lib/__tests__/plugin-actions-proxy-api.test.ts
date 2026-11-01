@@ -16,6 +16,8 @@ import { dispatchApiCall } from '../plugin-sandbox/host-api';
 import { actionsFor, resetActions, runAction, checkActions } from '../plugin-sandbox/actions';
 import { dayLabelsByDate, resetDayLabels } from '../plugin-sandbox/day-labels';
 import { allPages, resetPages } from '../plugin-sandbox/pages';
+import { onPanelRequest, resetPanelRequests } from '../plugin-sandbox/panel-requests';
+import { onPageNavigation, resetPageNavigation } from '../plugin-sandbox/page-navigation';
 import type { StreamSink } from '../plugin-sandbox/proxy-client';
 import '../plugin-sandbox/loader';
 
@@ -33,6 +35,36 @@ beforeEach(() => {
   resetDayLabels();
   resetPages();
   registryEntries.length = 0;
+});
+
+describe('ui.setPanel (openPanel, closePanel, togglePanel)', () => {
+  beforeEach(() => { resetPanelRequests(); });
+
+  it('needs the permission of the panel\'s slot', async () => {
+    await expect(dispatchApiCall(plugin({ permissions: [] }), 'ui.setPanel', ['composer-sidebar-right', 'open', { composerId: 'c1' }]))
+      .rejects.toThrow(/may not open the panel/);
+    await expect(dispatchApiCall(plugin({ permissions: ['ui:composer-sidebar'] }), 'ui.setPanel', ['email-detail-sidebar', 'open', undefined]))
+      .rejects.toThrow(/may not open the panel/);
+    await expect(dispatchApiCall(plugin({ permissions: ['ui:email-details'] }), 'ui.setPanel', ['sidebar-widget', 'open', undefined]))
+      .rejects.toThrow(/may not open the panel/);
+  });
+
+  it('delivers the request to the panel on screen and answers with its state', async () => {
+    const seen: unknown[] = [];
+    onPanelRequest((request) => { seen.push(request); return request.mode !== 'close'; });
+    await expect(dispatchApiCall(plugin({ permissions: ['ui:composer-sidebar'] }), 'ui.setPanel', ['composer-sidebar-right', 'toggle', { composerId: 'c1' }])).resolves.toBe(true);
+    await expect(dispatchApiCall(plugin({ permissions: ['ui:email-details'] }), 'ui.setPanel', ['email-detail-sidebar', 'close', undefined])).resolves.toBe(false);
+    expect(seen).toEqual([
+      { pluginId: 'p1', slot: 'composer-sidebar-right', mode: 'toggle', composerId: 'c1' },
+      { pluginId: 'p1', slot: 'email-detail-sidebar', mode: 'close' },
+    ]);
+  });
+
+  it('answers null when no panel is on screen, and refuses odd arguments', async () => {
+    await expect(dispatchApiCall(plugin({ permissions: ['ui:email-details'] }), 'ui.setPanel', ['email-detail-sidebar', 'open', undefined])).resolves.toBeNull();
+    await expect(dispatchApiCall(plugin({ permissions: ['ui:composer-sidebar'] }), 'ui.setPanel', ['composer-sidebar', 'open', { composerId: 5 }])).rejects.toThrow(/composerId/);
+    await expect(dispatchApiCall(plugin({ permissions: ['ui:composer-sidebar'] }), 'ui.setPanel', ['composer-sidebar', 'sideways', undefined])).rejects.toThrow(/mode/);
+  });
 });
 
 describe('ui.setActions', () => {
@@ -57,6 +89,15 @@ describe('ui.setActions', () => {
     expect(() => checkActions([{ id: 'x', label: 'X' }, { id: 'x', label: 'Y' }])).toThrow(/twice/);
     expect(() => checkActions(Array.from({ length: 9 }, (_, i) => ({ id: `a${i}`, label: 'A' })))).toThrow(/At most/);
     expect(() => checkActions([{ id: 'x', label: 'X', icon: '<svg>' }])).toThrow(/icon/);
+  });
+
+  it('takes a badge as a whole number from 0, none for 0', () => {
+    expect(checkActions([{ id: 'x', label: 'X', badge: 3 }])[0].badge).toBe(3);
+    expect(checkActions([{ id: 'x', label: 'X', badge: 250 }])[0].badge).toBe(250);
+    expect(checkActions([{ id: 'x', label: 'X', badge: 0 }])[0]).not.toHaveProperty('badge');
+    for (const badge of [-1, 1.5, '2', Number.NaN, Infinity, null]) {
+      expect(() => checkActions([{ id: 'x', label: 'X', badge }])).toThrow(/badge/);
+    }
   });
 
   it('sends a click to the plugin with only the context it may see', async () => {
@@ -90,6 +131,43 @@ describe('day labels and pages', () => {
 
     expect(allPages()).toEqual([expect.objectContaining({ pluginId: 'p1', id: 'files', title: 'Nextcloud' })]);
     await expect(dispatchApiCall(plugin({ permissions: ['ui:app-page'] }), 'ui.setPages', [[{ id: 'A B', title: 'x' }]])).rejects.toThrow(/id/);
+  });
+
+  describe('ui.openPage', () => {
+    const paged = plugin({ permissions: ['ui:app-page'] });
+    const seen: string[] = [];
+    beforeEach(async () => {
+      resetPageNavigation();
+      seen.length = 0;
+      await dispatchApiCall(paged, 'ui.setPages', [[{ id: 'files', title: 'Nextcloud' }]]);
+    });
+
+    it('moves the tab to the plugin\'s own page, each path segment encoded once', async () => {
+      onPageNavigation((href) => { seen.push(href); });
+      await expect(dispatchApiCall(paged, 'ui.openPage', ['files'])).resolves.toBe(true);
+      await expect(dispatchApiCall(paged, 'ui.openPage', ['files', '/docs/a b/x?tab=1'])).resolves.toBe(true);
+      expect(seen).toEqual(['/apps/p1/files', '/apps/p1/files/docs/a%20b/x%3Ftab%3D1']);
+    });
+
+    it('needs ui:app-page and refuses another plugin\'s page or a page it did not set', async () => {
+      onPageNavigation((href) => { seen.push(href); });
+      await expect(dispatchApiCall(plugin(), 'ui.openPage', ['files'])).rejects.toThrow(/lacks permission/);
+      await expect(dispatchApiCall(plugin({ id: 'p2', permissions: ['ui:app-page'] }), 'ui.openPage', ['files'])).rejects.toThrow(/not a page of this plugin/);
+      await expect(dispatchApiCall(paged, 'ui.openPage', ['other'])).rejects.toThrow(/not a page of this plugin/);
+      expect(seen).toEqual([]);
+    });
+
+    it('refuses a path that would leave the page', async () => {
+      onPageNavigation((href) => { seen.push(href); });
+      await expect(dispatchApiCall(paged, 'ui.openPage', ['files', '../../settings'])).rejects.toThrow(/\.\./);
+      await expect(dispatchApiCall(paged, 'ui.openPage', ['files', 42])).rejects.toThrow(/string/);
+      await expect(dispatchApiCall(paged, 'ui.openPage', ['files', 'x'.repeat(2001)])).rejects.toThrow(/longer/);
+      expect(seen).toEqual([]);
+    });
+
+    it('answers false while nothing can move the tab', async () => {
+      await expect(dispatchApiCall(paged, 'ui.openPage', ['files'])).resolves.toBe(false);
+    });
   });
 });
 

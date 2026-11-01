@@ -18,7 +18,6 @@
 
 import { useEffect } from 'react';
 import * as React from 'react';
-import * as ReactDOM from 'react-dom/client';
 import * as ReactJSXRuntime from 'react/jsx-runtime';
 import type {
   HostToSandbox,
@@ -26,14 +25,15 @@ import type {
   InitPayload,
   BackgroundInit,
   SlotInit,
+  RegionalSnapshot,
 } from './protocol';
 import { themeSnapshotToCSS, type ThemeSnapshot } from './host-theme';
-import { pluginUiKit, SlotPropsContext } from './ui-kit';
+import { backgroundReactDom, backgroundUiKit } from './ui-kit/background-kit';
 import { initFloatingDropdownBridge, dispatchFloatingDropdownEvent } from './ui-kit/floating-dropdown-bridge';
 import { interpolate, lookup, textDirection, type LocaleTables } from './plugin-i18n';
-import { isInlineSlot, MAX_INLINE_SLOT_WIDTH } from './slot-layout';
+import { isFillableSlot, isInlineSlot, MAX_INLINE_SLOT_WIDTH } from './slot-layout';
 import type {
-  CalendarEventInput, CalendarEventView, CalendarView, ComposeInput, DraftInput, EmailReadView,
+  AppInfoView, AppSettingsView, HostFeaturesView, SettingsSearchResult, CalendarEventInput, CalendarEventView, CalendarView, ComposeInput, DraftInput, EmailForwardInput, EmailForwardResult, EmailReadView,
   EmailSummary, IdentityPatch, IdentityView, MailboxView, NotificationInput, SlotName, TaskInput,
   TaskView, TemplateInput, TemplateView, VacationInput, VacationView,
 } from '../plugin-types';
@@ -43,7 +43,7 @@ import { EncryptionAtRestConfig, PublicKeyInput } from '@/stores/account-securit
 // ─── Module-scope state ──────────────────────────────────────
 
 interface PluginExports {
-  slots?: Record<string, { component: React.ComponentType<Record<string, unknown>>; shouldShow?: (ctx: unknown) => boolean; order?: number }>;
+  slots?: Record<string, { component: React.ComponentType<Record<string, unknown>>; shouldShow?: (ctx: unknown) => boolean; order?: number; fill?: boolean; startFolded?: boolean }>;
   hooks?: Record<string, (...args: unknown[]) => unknown>;
   /**
    * Keyboard shortcut bindings. Each entry's `handler` is registered as a
@@ -75,13 +75,43 @@ const pendingApi = new Map<string, { resolve: (v: unknown) => void; reject: (err
 // place on 'settings-change', so code that kept a reference sees new values.
 const settingsState: Record<string, unknown> = {};
 
-// The app language, pushed by the host on init and on every change.
+// The app language and regional settings, pushed by the host on init and on every change.
+let currentRegional: RegionalSnapshot = {
+  locale: 'en',
+  dateLocale: 'en',
+  hour12: false,
+  timeZone: 'UTC',
+  firstDayOfWeek: 1,
+};
+
 const localeListeners = new Set<(locale: string) => void>();
+
+// The plugin's strings. The host sends only the tables of the current locale
+// chain (plugin-i18n tablesFor) and the next ones with each locale-change.
+let localeTables: LocaleTables = {};
+
+/** Add the tables a locale-change brought; strings the plugin added itself win. */
+function mergeLocaleTables(next: LocaleTables | undefined): void {
+  if (!next) return;
+  for (const [locale, table] of Object.entries(next)) {
+    localeTables[locale] = { ...table, ...(localeTables[locale] ?? {}) };
+  }
+}
 function currentLocale(): string {
   return (globalThis as unknown as { __PLUGIN_LOCALE__?: string }).__PLUGIN_LOCALE__ || 'en';
 }
-function applyLocale(locale: string): void {
+
+function applyLocale(locale: string, regional?: RegionalSnapshot): void {
   (globalThis as unknown as { __PLUGIN_LOCALE__?: string }).__PLUGIN_LOCALE__ = locale;
+  if (regional) {
+    currentRegional = regional;
+  } else {
+    currentRegional = {
+      ...currentRegional,
+      locale,
+      dateLocale: locale,
+    };
+  }
   document.documentElement.lang = locale;
   // Slots sit inside an RTL page in Arabic, Hebrew and Persian; their own
   // document has to flip too.
@@ -90,6 +120,25 @@ function applyLocale(locale: string): void {
     try { listener(locale); } catch (err) { console.error('[plugin] locale listener failed', err); }
   }
 }
+
+function formatIntl(date: Date | number | string, options: Intl.DateTimeFormatOptions): string {
+  try {
+    const d = date instanceof Date ? date : new Date(date);
+    if (isNaN(d.getTime())) return '';
+    const locale = currentRegional.dateLocale || currentRegional.locale || 'en';
+    return new Intl.DateTimeFormat(locale, { timeZone: currentRegional.timeZone, ...options }).format(d);
+  } catch {
+    return '';
+  }
+}
+
+function formatTime(date: Date | number | string, options?: Intl.DateTimeFormatOptions): string {
+  return formatIntl(date, { hour12: currentRegional.hour12, hour: 'numeric', minute: 'numeric', ...options });
+}
+
+function formatDate(date: Date | number | string, options?: Intl.DateTimeFormatOptions): string {
+  return formatIntl(date, options ?? {});
+}
 const settingsListeners = new Set<(settings: Record<string, unknown>) => void>();
 
 function applySettings(next: Record<string, unknown>): void {
@@ -97,6 +146,19 @@ function applySettings(next: Record<string, unknown>): void {
   Object.assign(settingsState, next);
   for (const listener of settingsListeners) {
     try { listener(settingsState); } catch (err) { console.error('[plugin] settings listener failed', err); }
+  }
+}
+// What api.host.features says: one object for the iframe's lifetime,
+// updated in place on 'host-change' like the settings.
+const hostFeaturesState: HostFeaturesView = { externalSenderLabel: false, externalRecipientWarning: false };
+const hostFeatureListeners = new Set<(features: HostFeaturesView) => void>();
+
+function applyHostFeatures(next: HostFeaturesView | undefined): void {
+  if (!next) return;
+  hostFeaturesState.externalSenderLabel = next.externalSenderLabel === true;
+  hostFeaturesState.externalRecipientWarning = next.externalRecipientWarning === true;
+  for (const listener of hostFeatureListeners) {
+    try { listener(hostFeaturesState); } catch (err) { console.error('[plugin] host feature listener failed', err); }
   }
 }
 const pendingCallbacks = new Map<string, { resolve: (v: unknown) => void; reject: (err: Error) => void }>();
@@ -297,9 +359,14 @@ interface PluginKeywordDefinition {
   label: string;
   color: string;
   visibility?: PluginKeywordVisibility;
+  /** The plugin that added it with keywords.add; absent on the user's own tags. */
+  addedBy?: string;
 }
 
-type PluginKeywordDefinitionInput = Omit<PluginKeywordDefinition, 'color'> & { color?: string };
+type PluginKeywordDefinitionInput = Omit<PluginKeywordDefinition, 'color' | 'addedBy'> & { color?: string };
+
+type PluginKeywordPatch = Pick<PluginKeywordDefinition, 'id'> &
+  Partial<Pick<PluginKeywordDefinition, 'label' | 'color' | 'visibility'>>;
 
 interface PluginKeywordCounts {
   total: number;
@@ -308,7 +375,7 @@ interface PluginKeywordCounts {
 
 function buildPluginApi(manifest: PluginManifest) {
   applySettings({ ...manifest.settings });
-  const localeTables: LocaleTables = JSON.parse(JSON.stringify(manifest.locales ?? {}));
+  localeTables = JSON.parse(JSON.stringify(manifest.locales ?? {}));
   return {
     plugin: {
       id: manifest.id,
@@ -320,6 +387,27 @@ function buildPluginApi(manifest: PluginManifest) {
         settingsListeners.add(listener);
         return () => { settingsListeners.delete(listener); };
       },
+    },
+    /**
+     * Bulwark features that replace what plugins did, so a plugin can step
+     * back while Bulwark does its job. Updated in place; no permission needed.
+     */
+    host: {
+      features: hostFeaturesState,
+      /** Called with the new features whenever one turns on or off. Returns an unsubscribe function. */
+      onFeaturesChange: (listener: (features: HostFeaturesView) => void) => {
+        hostFeatureListeners.add(listener);
+        return () => { hostFeatureListeners.delete(listener); };
+      },
+    },
+    /** The app the plugin runs in: product, the administrator's name for it, version, edition. No permission needed. */
+    app: {
+      getInfo: () => callApi('app.getInfo', []) as Promise<AppInfoView>,
+      /** Settings matching a query (the user's language or English): page, label, description. No permission needed. */
+      searchSettings: (query: string, options?: { limit?: number }) =>
+        callApi('app.searchSettings', [query, options]) as Promise<SettingsSearchResult[]>,
+      /** The user's preferences: layout, formats, reading and sending behaviour. Needs settings:read. */
+      getSettings: () => callApi('app.getSettings', []) as Promise<AppSettingsView>,
     },
     crypto: {
       getPublicKeys: () => callApi('crypto.getPublicKeys', []),
@@ -339,6 +427,32 @@ function buildPluginApi(manifest: PluginManifest) {
     },
     user: {
       getAccounts: () => callApi('user.getAccounts', []),
+      /**
+       * The signed-in user: their own JMAP account id (Stalwart's principal
+       * id), address and name. Needs account:read.
+       */
+      getSelf: () => callApi('user.getSelf', []) as Promise<{ accountId: string; email: string; name: string }>,
+      /**
+       * Every mail account of the signed-in login: their own ('personal'),
+       * team mailboxes they are a member of ('group') and mailboxes others
+       * shared with them ('shared'); `isOpen` marks the open folder's.
+       * Needs account:read.
+       */
+      getMailAccounts: () => callApi('user.getMailAccounts', []) as Promise<Array<{
+        accountId: string; name: string; kind: 'personal' | 'group' | 'shared'; isReadOnly: boolean; isOpen: boolean;
+      }>>,
+      /**
+       * People from the server's directory, as the named mail account (else
+       * the user's own) sees it: by principal id (at most 20) or by a part
+       * of their name or address (3 characters or more). At most 20 results
+       * and 10 lookups a minute. `complete` is false when the administrator
+       * turned directory lookups off; only the people the user shares an
+       * account with are known then. Needs directory:read.
+       */
+      findPeople: (query: { text?: string; ids?: string[]; accountId?: string }) =>
+        callApi('user.findPeople', [query], NETWORK_API_TIMEOUT_MS) as Promise<{
+          people: Array<{ id: string; type: string; name: string; email: string }>; complete: boolean;
+        }>,
       getIdentities: () => callApi('user.getIdentities', []),
       /** The IANA time zone the app shows times in (the user's setting, else the browser's). */
       getTimeZone: () => callApi('user.getTimeZone', []) as Promise<string>,
@@ -516,6 +630,13 @@ function buildPluginApi(manifest: PluginManifest) {
       /** Opens an http/https URL in a new tab via host `window.open`. */
       openExternalUrl: (url: string, target?: string) =>
         callApi('ui.openExternalUrl', [url, target]) as Promise<void>,
+      /**
+       * Print a page the plugin made, such as a document drawn from data:
+       * HTML with <style>, sanitised like a message body, no scripts, images
+       * as data: URLs only. Opens the browser's print dialog (where the user
+       * can also save a PDF); 3 times a minute.
+       */
+      print: (page: { title?: string; html: string }) => callApi('ui.print', [page], 0) as Promise<boolean>,
       /** Downloads a file generated by the plugin. Not a user's file or attachment. */
       /** `content` is text, or the file's bytes (ArrayBuffer / Uint8Array). */
       downloadFile: (opts: { content: string | ArrayBuffer | Uint8Array; filename: string; contentType?: string }) =>
@@ -526,8 +647,21 @@ function buildPluginApi(manifest: PluginManifest) {
        * palette, ...). Replaces what this plugin set there before; [] removes
        * them. Clicks arrive in the `onAction({ surface, actionId, context })` hook.
        */
-      setActions: (surface: string, actions: Array<{ id: string; label: string; icon?: string; order?: number; mailboxRoles?: string[]; mimeTypes?: string[]; danger?: boolean }>) =>
+      setActions: (surface: string, actions: Array<{
+        id: string; label: string; icon?: string; order?: number; mailboxRoles?: string[]; mimeTypes?: string[]; danger?: boolean;
+        accounts?: Array<'personal' | 'group' | 'shared'>; hasKeyword?: string; notKeyword?: string;
+      }>) =>
         callApi('ui.setActions', [surface, actions]) as Promise<void>,
+      /**
+       * Keyword filters for the message list, drawn as chips in the list
+       * header of the folders they apply to. A chip the user turns on adds
+       * its condition to the folder's query; replaces this plugin's earlier
+       * filters, [] removes them. Needs ui:message-list.
+       */
+      setListFilters: (filters: Array<{
+        id: string; label: string; icon?: string; hasKeyword?: string; notKeyword?: string;
+        accounts?: Array<'personal' | 'group' | 'shared'>; mailboxRoles?: string[]; order?: number;
+      }>) => callApi('ui.setListFilters', [filters]) as Promise<void>,
       /**
        * Ask every visible message row for its onEmailListItemRender badges
        * again, e.g. after a task was created elsewhere. At most once a second.
@@ -540,11 +674,32 @@ function buildPluginApi(manifest: PluginManifest) {
       setPages: (pages: Array<{ id: string; title: string; icon?: string }>) =>
         callApi('ui.setPages', [pages]) as Promise<void>,
       /**
+       * Moves this tab to one of this plugin's own pages (set with setPages),
+       * e.g. from a dialog's link to the record its page shows. `path` is
+       * what the `app-page` slot gets as `path` (segments joined by "/").
+       * Resolves to false when the app could not take it, so the plugin can
+       * open the page in a new tab with openExternalUrl instead.
+       */
+      openPage: (pageId: string, path?: string) =>
+        callApi('ui.openPage', [pageId, path]) as Promise<boolean>,
+      /**
        * The header of this plugin's sidebar section (the host draws it like
        * Folders and Tags), e.g. a translated "Upcoming birthdays". null goes
        * back to the plugin's name. At most 40 characters.
        */
       setSectionTitle: (title: string | null) => callApi('ui.setSectionTitle', [title]) as Promise<void>,
+      /**
+       * Open, close or toggle the panel this plugin's slot sits in:
+       * 'composer-sidebar', 'composer-sidebar-right' (pass the composerId
+       * from the click context or the slot's props) or 'email-detail-sidebar'.
+       * Resolve to whether the panel is open afterwards, or null when no such
+       * panel is on screen (no composer or message open, or a phone), so the
+       * plugin can fall back to a dialog. A panel opened this way gets a new
+       * `focusRequest` prop, so the slot can focus its input.
+       */
+      openPanel: (slot: string, opts?: { composerId?: string }) => callApi('ui.setPanel', [slot, 'open', opts]) as Promise<boolean | null>,
+      closePanel: (slot: string, opts?: { composerId?: string }) => callApi('ui.setPanel', [slot, 'close', opts]) as Promise<boolean | null>,
+      togglePanel: (slot: string, opts?: { composerId?: string }) => callApi('ui.setPanel', [slot, 'toggle', opts]) as Promise<boolean | null>,
     },
     // Requests with an account or key the manifest declares under
     // `credentials`; the server adds the secret (permission http:proxy).
@@ -568,9 +723,11 @@ function buildPluginApi(manifest: PluginManifest) {
       /**
        * One message with its plain text, headers and source, or null when
        * there is none with that id. Any message of the account, not only the
-       * open one.
+       * open one. Ids repeat across accounts: pass the view's `accountId` to
+       * name the message of that account.
        */
-      get: (emailId: string) => callApi('email.get', [emailId]) as Promise<EmailReadView | null>,
+      get: (emailId: string, accountId?: string) =>
+        callApi('email.get', [emailId, accountId]) as Promise<EmailReadView | null>,
       /**
        * Move messages (at most 100) into a folder of the account, like the
        * user would; the move hooks run. 20 moves a minute. Needs email:write.
@@ -585,21 +742,59 @@ function buildPluginApi(manifest: PluginManifest) {
       list: (options?: { mailboxId?: string; limit?: number; position?: number }) =>
         callApi('email.list', [options]) as Promise<EmailSummary[]>,
       /**
+       * Messages matching a search, newest first, as summaries without the
+       * body: `text` (sender, recipients, subject and body, whole words),
+       * `from`, `to`, `subject`, `after`/`before` (dates), `hasAttachment`,
+       * in one folder with `mailboxId`. At least one condition; limit 1-50
+       * (default 20).
+       */
+      search: (query: { text?: string; from?: string; to?: string; subject?: string; after?: string; before?: string; hasAttachment?: boolean; mailboxId?: string; limit?: number }) =>
+        callApi('email.search', [query]) as Promise<EmailSummary[]>,
+      /**
        * The bytes of one attachment of a message (email:blob-read, at most
        * 25 MB). `blobId` must be one of that message's attachments, e.g.
        * from an `attachment-actions` slot or onAttachmentDownload.
        */
-      getAttachment: (emailId: string, blobId: string) =>
-        callApi('email.getAttachment', [emailId, blobId], NETWORK_API_TIMEOUT_MS) as Promise<{
+      getAttachment: (emailId: string, blobId: string, accountId?: string) =>
+        callApi('email.getAttachment', [emailId, blobId, accountId], NETWORK_API_TIMEOUT_MS) as Promise<{
           name: string; type: string; size: number; data: ArrayBuffer;
         }>,
       /** The full RFC 5322 source of a message, to save as .eml (email:blob-read, at most 25 MB). */
-      getRaw: (emailId: string) =>
-        callApi('email.getRaw', [emailId], NETWORK_API_TIMEOUT_MS) as Promise<ArrayBuffer>,
+      getRaw: (emailId: string, accountId?: string) =>
+        callApi('email.getRaw', [emailId, accountId], NETWORK_API_TIMEOUT_MS) as Promise<ArrayBuffer>,
       setKeyword: (emailId: string, keyword: string, accountId?: string) =>
         callApi('email.setKeyword', [emailId, keyword, accountId]) as Promise<void>,
       removeKeyword: (emailId: string, keyword: string, accountId?: string) =>
         callApi('email.removeKeyword', [emailId, keyword, accountId]) as Promise<void>,
+      /**
+       * Set (true) and clear (false) up to 20 keywords of a message in one
+       * change, e.g. `{ '$assigned:b': true, '$assigned:c': false }`. A
+       * message in the open list shows the change at once. Resolves to false
+       * when another plugin's onBeforeEmailKeywordChange stopped it.
+       */
+      updateKeywords: (emailId: string, changes: Record<string, boolean>, accountId?: string) =>
+        callApi('email.updateKeywords', [emailId, changes, accountId]) as Promise<boolean>,
+      /**
+       * Forward a message with its attachments to 1-10 addresses, without
+       * the composer (email:forward). The first forward to an address asks
+       * the user; resolves to { sent: false, reason: 'declined' } when they
+       * say no and 'stopped' when a send check stopped it. 10 a minute.
+       * Waits as long as the user takes to answer.
+       */
+      forward: (emailId: string, input: EmailForwardInput) =>
+        callApi('email.forward', [emailId, input], 0) as Promise<EmailForwardResult>,
+    },
+    // A small JSON value (at most 4 KB) the plugin keeps in a mail account's
+    // Inbox, shared with everyone who can open that account (Stalwart 1.0
+    // metadata; it counts against the mailbox's metadata room). get needs
+    // email:read, set email:write; 30 reads and 20 changes a minute.
+    accountData: {
+      /** `supported` is false on servers without metadata; `value` is then null. */
+      get: (accountId?: string) =>
+        callApi('accountData.get', [accountId], NETWORK_API_TIMEOUT_MS) as Promise<{ supported: boolean; value: unknown }>,
+      /** Replace the value; null removes it. Throws where `get` says unsupported. */
+      set: (accountId: string | undefined, value: unknown) =>
+        callApi('accountData.set', [accountId, value], NETWORK_API_TIMEOUT_MS) as Promise<void>,
     },
     // The composer (permission: compose:open). Opens it filled in; the user
     // reviews the message and decides whether to send it.
@@ -636,13 +831,26 @@ function buildPluginApi(manifest: PluginManifest) {
     },
     // Native sidebar tag definitions. Definition reads/writes use the existing
     // settings permissions; server discovery and message counts use email:read.
-    // add() is intentionally append-only. reorder() requires a complete
-    // permutation of existing ids. Neither method overwrites or removes tags.
+    // add() never overwrites a tag that is there. update() and remove() reach
+    // only the tags this plugin added, never the user's own or another
+    // plugin's. reorder() requires a complete permutation of existing ids.
     keywords: {
       list: () => callApi('keywords.list', []) as Promise<PluginKeywordDefinition[]>,
       add: (definitions: PluginKeywordDefinitionInput[]) =>
         callApi('keywords.add', [definitions]) as Promise<{
           added: PluginKeywordDefinition[];
+          skipped: string[];
+        }>,
+      /** Change the label, color or visibility of tags this plugin added; the id stays. */
+      update: (definitions: PluginKeywordPatch[]) =>
+        callApi('keywords.update', [definitions]) as Promise<{
+          updated: PluginKeywordDefinition[];
+          skipped: string[];
+        }>,
+      /** Delete tags this plugin added. Messages keep their keywords. */
+      remove: (ids: string[]) =>
+        callApi('keywords.remove', [ids]) as Promise<{
+          removed: string[];
           skipped: string[];
         }>,
       reorder: (ids: string[], options?: { caseSensitive?: boolean }) =>
@@ -812,6 +1020,23 @@ function buildPluginApi(manifest: PluginManifest) {
         return currentLocale();
       },
       getLocale: () => currentLocale(),
+      get dateLocale(): string {
+        return currentRegional.dateLocale;
+      },
+      get timeFormat(): '12h' | '24h' {
+        return currentRegional.hour12 ? '12h' : '24h';
+      },
+      get hour12(): boolean {
+        return currentRegional.hour12;
+      },
+      get timeZone(): string {
+        return currentRegional.timeZone;
+      },
+      get firstDayOfWeek(): 0 | 1 | 6 {
+        return currentRegional.firstDayOfWeek;
+      },
+      formatTime,
+      formatDate,
       t(key: string, vars?: Record<string, string | number>): string {
         return interpolate(lookup(localeTables, currentLocale(), key) ?? key, vars);
       },
@@ -841,27 +1066,51 @@ function buildPluginApi(manifest: PluginManifest) {
  * The host injects the per-plugin API as `@plugin-host`, so plugin code can
  * `const api = require('@plugin-host')` in both background and slot modes.
  */
-export function makePluginRequire(api: ReturnType<typeof buildPluginApi> | null): (name: string) => unknown {
+export function makePluginRequire(api: ReturnType<typeof buildPluginApi> | null, renderer: Renderer | null = null): (name: string) => unknown {
+  const reactDom = renderer?.ReactDOM ?? backgroundReactDom;
   const known: Record<string, unknown> = {
     'react': React,
-    'react-dom': ReactDOM,
-    'react-dom/client': ReactDOM,
+    'react-dom': reactDom,
+    'react-dom/client': reactDom,
     'react/jsx-runtime': ReactJSXRuntime,
     'react/jsx-dev-runtime': ReactJSXRuntime,
   };
   if (api) known['@plugin-host'] = api;
   // The app's controls (lib/plugin-sandbox/ui-kit), so plugins draw the same
-  // buttons, fields and lists as the app without bundling their own.
-  known['@plugin-host/ui'] = pluginUiKit;
+  // buttons, fields and lists as the app without bundling their own. In a
+  // background frame, stand-ins with the same names.
+  known['@plugin-host/ui'] = renderer?.kit ?? backgroundUiKit;
   return (name: string) => {
     if (Object.prototype.hasOwnProperty.call(known, name)) return known[name];
     throw new Error(`Plugin sandbox: module "${name}" is not available. Externalise it in your bundler or ship it bundled.`);
   };
 }
 
-function evaluateBundle(code: string, api: ReturnType<typeof buildPluginApi> | null): PluginExports {
+// ─── Renderer (slot frames only) ─────────────────────────────
+
+/**
+ * React DOM and the UI kit. Only slot frames draw, so only they load these
+ * (a separate chunk, ~350 kB to parse); a background frame gets React and
+ * stand-ins. The host marks slot frames in their URL (?frame=slot) so the
+ * load starts with the document, not after init.
+ */
+export interface Renderer {
+  ReactDOM: typeof import('react-dom/client');
+  kit: unknown;
+  SlotPropsContext: React.Context<Record<string, unknown>>;
+}
+
+let rendererPromise: Promise<Renderer> | null = null;
+
+export function loadRenderer(): Promise<Renderer> {
+  rendererPromise ??= import('./slot-renderer')
+    .then((m) => ({ ReactDOM: m.ReactDOM, kit: m.pluginUiKit, SlotPropsContext: m.SlotPropsContext }));
+  return rendererPromise;
+}
+
+function evaluateBundle(code: string, api: ReturnType<typeof buildPluginApi> | null, renderer: Renderer | null = null): PluginExports {
   const mod: { exports: PluginExports } = { exports: {} };
-  const requireShim = makePluginRequire(api);
+  const requireShim = makePluginRequire(api, renderer);
   let fn: (...args: unknown[]) => void;
   try {
     fn = new Function(
@@ -872,7 +1121,7 @@ function evaluateBundle(code: string, api: ReturnType<typeof buildPluginApi> | n
     throw new Error(`Bundle parse error: ${(err as Error).message}`);
   }
   try {
-    fn(mod, mod.exports, requireShim, React, ReactDOM, ReactJSXRuntime, console);
+    fn(mod, mod.exports, requireShim, React, renderer?.ReactDOM ?? backgroundReactDom, ReactJSXRuntime, console);
   } catch (err) {
     throw new Error(`Bundle evaluation threw: ${(err as Error).message}`);
   }
@@ -901,7 +1150,7 @@ async function bootBackground(payload: BackgroundInit): Promise<void> {
   }
 
   // Enumerate slot offers.
-  const slotInfo: Array<{ name: SlotName; hasShouldShow: boolean; order: number }> = [];
+  const slotInfo: Array<{ name: SlotName; hasShouldShow: boolean; order: number; fill?: boolean; startFolded?: boolean }> = [];
   const slots = exports.slots ?? {};
   for (const [name, def] of Object.entries(slots)) {
     if (def && typeof def.component === 'function') {
@@ -909,6 +1158,10 @@ async function bootBackground(payload: BackgroundInit): Promise<void> {
         name: name as SlotName,
         hasShouldShow: typeof def.shouldShow === 'function',
         order: typeof def.order === 'number' ? def.order : 100,
+        // A panel that fills its panel instead of growing with its content.
+        ...(def.fill === true && isFillableSlot(name) ? { fill: true } : {}),
+        // A panel the user opens when they want it (a chat), not on every message.
+        ...(def.startFolded === true && isFillableSlot(name) ? { startFolded: true } : {}),
       });
     }
   }
@@ -937,13 +1190,15 @@ async function bootBackground(payload: BackgroundInit): Promise<void> {
   sendToHost({ type: 'init-done', hooks: hookNames, slots: slotInfo, shortcuts: shortcutInfo });
 }
 
-function bootSlot(payload: SlotInit): void {
+async function bootSlot(payload: SlotInit): Promise<void> {
   // Replay the host theme before first paint so the slot never flashes the UA
   // default serif font or a light-on-light/dark mismatch.
   applyHostTheme(payload.theme);
 
+  const renderer = await loadRenderer();
+  const { SlotPropsContext } = renderer;
   const api = buildPluginApi(payload.manifest);
-  const exports = evaluateBundle(payload.code, api);
+  const exports = evaluateBundle(payload.code, api, renderer);
   pluginExports = exports;
   slotName = payload.slot;
 
@@ -955,9 +1210,20 @@ function bootSlot(payload: SlotInit): void {
   const rootEl = document.getElementById('plugin-sandbox-root');
   if (!rootEl) throw new Error('Sandbox root element missing');
 
-  let currentProps = decodeCallbacks(payload.extraProps) as Record<string, unknown>;
+  // Props the host pushed while the renderer was loading replace the init ones.
+  let currentProps = decodeCallbacks(propsBeforeBoot ?? payload.extraProps) as Record<string, unknown>;
+  propsBeforeBoot = null;
   const Component = slotDef.component;
   const inline = isInlineSlot(payload.slot);
+  // Filling its panel: the document is as tall as the frame and the slot's
+  // root takes all of it; the height is the panel's, so nothing is measured.
+  const fill = payload.fill === true && isFillableSlot(payload.slot);
+  if (fill) {
+    document.documentElement.style.height = '100%';
+    document.body.style.height = '100%';
+    document.body.style.overflow = 'hidden';
+    rootEl.style.height = '100%';
+  }
 
   // A trivial pub/sub so host-pushed `props-update` messages re-render the
   // slot tree without tearing down the iframe.
@@ -986,13 +1252,15 @@ function bootSlot(payload: SlotInit): void {
       const bump = () => setSettingsVersion((v) => v + 1);
       settingsListeners.add(bump);
       localeListeners.add(bump);
+      hostFeatureListeners.add(bump);
       return () => {
         settingsListeners.delete(bump);
         localeListeners.delete(bump);
+        hostFeatureListeners.delete(bump);
       };
     }, []);
     React.useEffect(() => {
-      if (!wrapRef.current) return;
+      if (!wrapRef.current || fill) return;
       const el = wrapRef.current;
       let lastHeight = -1;
       let lastWidth = -1;
@@ -1014,18 +1282,20 @@ function bootSlot(payload: SlotInit): void {
     // that wraps to fit it reports a narrow width back, so it never grew.
     const style = inline
       ? { display: 'inline-block', width: 'max-content', maxWidth: MAX_INLINE_SLOT_WIDTH }
-      : undefined;
+      : fill ? { height: '100%' } : undefined;
     return React.createElement('div', { ref: wrapRef, style },
       React.createElement(SlotPropsContext.Provider, { value: props }, React.createElement(Component, props)));
   };
 
-  const reactRoot = ReactDOM.createRoot(rootEl);
+  const reactRoot = renderer.ReactDOM.createRoot(rootEl);
   reactRoot.render(React.createElement(SlotShell));
   sendToHost({ type: 'init-done', hooks: [], slots: [], shortcuts: [] });
 }
 
 // Populated by bootSlot - receives `props-update` messages.
 let slotPropsUpdater: ((next: Record<string, unknown>) => void) | null = null;
+/** The last props-update that arrived before bootSlot was ready for it. */
+let propsBeforeBoot: Record<string, unknown> | null = null;
 
 async function handleInit(payload: InitPayload): Promise<void> {
   if (bootDone) return;
@@ -1033,12 +1303,14 @@ async function handleInit(payload: InitPayload): Promise<void> {
   mode = payload.mode;
   // Make the active locale available to plugin code (api.i18n) right away -
   // not only after the first 'locale-change' push.
-  applyLocale(payload.locale);
+  applyLocale(payload.locale, payload.regional);
+  // Before the bundle runs, so activate() and shouldShow already see it.
+  applyHostFeatures(payload.hostFeatures);
   try {
     if (payload.mode === 'background') {
       await bootBackground(payload);
     } else {
-      bootSlot(payload);
+      await bootSlot(payload);
     }
   } catch (err) {
     sendToHost({ type: 'init-error', error: (err as Error).message ?? String(err) });
@@ -1115,19 +1387,28 @@ function handleHostMessage(ev: MessageEvent): void {
     }
 
     case 'locale-change':
-      applyLocale(msg.locale);
+      mergeLocaleTables(msg.locales);
+      applyLocale(msg.locale, msg.regional);
       break;
 
     case 'theme-change':
       applyHostTheme(msg.theme);
+      // The host switches the iframe element's color-scheme on this, not
+      // before: while the two differ the browser paints an opaque canvas.
+      sendToHost({ type: 'theme-applied', dark: msg.theme.dark === true });
       break;
 
     case 'settings-change':
       applySettings(msg.settings ?? {});
       break;
 
+    case 'host-change':
+      applyHostFeatures(msg.features);
+      break;
+
     case 'props-update':
-      slotPropsUpdater?.(msg.props ?? {});
+      if (slotPropsUpdater) slotPropsUpdater(msg.props ?? {});
+      else if (mode === 'slot') propsBeforeBoot = msg.props ?? {};
       break;
 
     case 'stream-chunk': {
@@ -1164,33 +1445,42 @@ function handleHostMessage(ev: MessageEvent): void {
   }
 }
 
-// ─── React entry ─────────────────────────────────────────────
+// ─── Entry ───────────────────────────────────────────────────
 
+/**
+ * Bind to the host and tell it the frame is ready. The sandbox document
+ * (sandbox-document.ts) runs this from its script, next to an existing
+ * #plugin-sandbox-root. Returns the teardown.
+ */
+export function startSandboxRuntime(): () => void {
+  // Not framed by a same-origin host: stay inert. No listener, no ping -
+  // nothing a window.open()-ing site could talk to.
+  const host = resolveHost();
+  if (!host) return () => {};
+  if (new URLSearchParams(window.location.search).get('frame') === 'slot') void loadRenderer();
+  parentWindow = host.window;
+  parentOrigin = host.origin;
+  initFloatingDropdownBridge(
+    (msg) => sendToHost(msg),
+    () => !!parentWindow,
+  );
+  window.addEventListener('message', handleHostMessage);
+  // Initial ping, targeted at the host origin so it can only land on the
+  // page that framed us. Guard at module scope so React strict mode's
+  // double-invoke doesn't re-post (and so a re-post can't race with the
+  // parent's init reply).
+  if (!readyPosted) {
+    readyPosted = true;
+    sendToHost({ type: 'sandbox-ready' });
+  }
+  return () => {
+    window.removeEventListener('message', handleHostMessage);
+  };
+}
+
+/** The runtime as a React component, for tests that render it. */
 export function SandboxRuntime(): React.JSX.Element {
-  useEffect(() => {
-    // Not framed by a same-origin host: stay inert. No listener, no ping -
-    // nothing a window.open()-ing site could talk to.
-    const host = resolveHost();
-    if (!host) return;
-    parentWindow = host.window;
-    parentOrigin = host.origin;
-    initFloatingDropdownBridge(
-      (msg) => sendToHost(msg),
-      () => !!parentWindow,
-    );
-    window.addEventListener('message', handleHostMessage);
-    // Initial ping, targeted at the host origin so it can only land on the
-    // page that framed us. Guard at module scope so React strict mode's
-    // double-invoke doesn't re-post (and so a re-post can't race with the
-    // parent's init reply).
-    if (!readyPosted) {
-      readyPosted = true;
-      sendToHost({ type: 'sandbox-ready' });
-    }
-    return () => {
-      window.removeEventListener('message', handleHostMessage);
-    };
-  }, []);
+  useEffect(() => startSandboxRuntime(), []);
   return <div id="plugin-sandbox-root" />;
 }
 

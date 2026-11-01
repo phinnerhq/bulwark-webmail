@@ -14,6 +14,12 @@ describe('applyLiteConfig (config.json for the static build)', () => {
     expect(config.loginLogoLightUrl).toBe('/branding/Bulwark_Logo_Color.svg');
     expect(config.jmapServers).toEqual([]);
     expect(config.demoMode).toBe(false);
+    expect(config.oauthRevokeOnSignOut).toBe(true);
+  });
+
+  it('lets config.json keep refresh tokens valid on sign-out (#1388)', () => {
+    expect(applyLiteConfig({ oauthRevokeOnSignOut: false }).oauthRevokeOnSignOut).toBe(false);
+    expect(applyLiteConfig({ oauthRevokeOnSignOut: 'no' }).oauthRevokeOnSignOut).toBe(true);
   });
 
   it('allows a custom endpoint by default only when no server is configured', () => {
@@ -69,6 +75,20 @@ describe('applyLiteConfig (config.json for the static build)', () => {
     expect(applyLiteConfig({ sourceCodeUrl: 'https://git.example.com/acme/webmail' }).sourceCodeUrl)
       .toBe('https://git.example.com/acme/webmail');
     expect(applyLiteConfig({ sourceCodeUrl: 'javascript:alert(1)' }).sourceCodeUrl).toBe('');
+  });
+
+  it('reads the accessibility and help links and drops other schemes', () => {
+    const config = applyLiteConfig({
+      accessibilityStatementUrl: 'https://acme.example/accessibility',
+      accessibilityFeedbackUrl: 'barriers@acme.example',
+      helpUrl: 'javascript:alert(1)',
+      easyReadUrl: 'https://acme.example/leichte-sprache',
+    });
+    expect(config.accessibilityStatementUrl).toBe('https://acme.example/accessibility');
+    expect(config.accessibilityFeedbackUrl).toBe('mailto:barriers@acme.example');
+    expect(config.helpUrl).toBe('');
+    expect(config.easyReadUrl).toBe('https://acme.example/leichte-sprache');
+    expect(config.signLanguageUrl).toBe('');
   });
 
   it('keeps deployer-facing branding and login toggles', () => {

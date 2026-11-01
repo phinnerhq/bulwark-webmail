@@ -33,7 +33,7 @@ function ProviderIcon({ server }: { server: PublicJmapServerEntry }) {
   return (
     <span
       aria-hidden="true"
-      className="w-5 h-5 shrink-0 rounded-full bg-muted text-muted-foreground text-[11px] font-semibold leading-5 text-center uppercase"
+      className="w-5 h-5 shrink-0 rounded-full bg-muted text-muted-foreground text-[0.6875rem] font-semibold leading-5 text-center uppercase"
     >
       {Array.from(server.label.trim())[0] ?? "?"}
     </span>
@@ -79,7 +79,7 @@ export function IdpSignInList({ servers, primaryId, pendingId, failedId, onSelec
               onClick={() => onSelect(server)}
               disabled={pendingId !== null}
               className={cn(
-                "w-full h-11 justify-start gap-3 px-4 font-medium text-[15px] rounded-xl",
+                "w-full h-11 justify-start gap-3 px-4 font-medium text-[0.9375rem] rounded-xl",
                 primary
                   ? "shadow-md shadow-primary/15 hover:shadow-lg hover:shadow-primary/20"
                   : "border-border/60 hover:bg-muted/50",

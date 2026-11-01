@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useMemo } from "react";
 import { useTranslations } from "next-intl";
 import { Folder, FileText, FileCode, ImageIcon, FileAudio, File } from "@/components/icons";
 import { SettingsSection, SettingItem, ToggleSwitch, RadioGroup } from "./settings-section";
-import { loadFilesSettings, saveFilesSettings, type FilesSettings } from "@/components/files/files-settings";
+import { useFilesSettings, type FilesSettings } from "@/components/files/files-settings";
 import { cn } from "@/lib/utils";
 import { withBasePath } from "@/lib/browser-navigation";
 import { useConfig } from "@/hooks/use-config";
@@ -86,7 +86,7 @@ function FilesSettingsPreview({ settings }: { settings: FilesSettings }) {
 
   const listView = (
     <div className="flex-1 min-w-0 overflow-hidden">
-      <div className="flex items-center gap-3 px-2 py-1 text-[10px] font-medium text-muted-foreground border-b border-border bg-muted/50">
+      <div className="flex items-center gap-3 px-2 py-1 text-[0.625rem] font-medium text-muted-foreground border-b border-border bg-muted/50">
         <span className="flex-1 min-w-0">Name</span>
         <span className="w-14 text-end">Size</span>
         <span className="w-16 text-end">Modified</span>
@@ -104,13 +104,13 @@ function FilesSettingsPreview({ settings }: { settings: FilesSettings }) {
           ) : settings.showIcons ? (
             getPreviewIcon(file, settings.coloredIcons, "sm")
           ) : null}
-          <span className={cn("flex-1 min-w-0 truncate text-[11px]", file.isFolder && "font-medium")}>
+          <span className={cn("flex-1 min-w-0 truncate text-[0.6875rem]", file.isFolder && "font-medium")}>
             {file.name}
           </span>
-          <span className="w-14 text-end text-[10px] text-muted-foreground tabular-nums">
+          <span className="w-14 text-end text-[0.625rem] text-muted-foreground tabular-nums">
             {formatSize(file.size)}
           </span>
-          <span className="w-16 text-end text-[10px] text-muted-foreground tabular-nums">
+          <span className="w-16 text-end text-[0.625rem] text-muted-foreground tabular-nums">
             {file.modified.slice(5)}
           </span>
         </div>
@@ -136,7 +136,7 @@ function FilesSettingsPreview({ settings }: { settings: FilesSettings }) {
             ) : (
               <div className="w-8 h-8" />
             )}
-            <span className={cn("text-[9px] truncate w-full text-center", file.isFolder && "font-medium")}>
+            <span className={cn("text-[0.5625rem] truncate w-full text-center", file.isFolder && "font-medium")}>
               {file.name}
             </span>
           </div>
@@ -156,26 +156,7 @@ function FilesSettingsPreview({ settings }: { settings: FilesSettings }) {
 
 export function FilesSettingsComponent() {
   const t = useTranslations("settings.files");
-  const [settings, setSettings] = useState<FilesSettings>(loadFilesSettings);
-
-  // Listen for external changes (e.g. if file-browser updates settings)
-  useEffect(() => {
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === "files-settings") {
-        setSettings(loadFilesSettings());
-      }
-    };
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, []);
-
-  const update = useCallback((patch: Partial<FilesSettings>) => {
-    setSettings(prev => {
-      const next = { ...prev, ...patch };
-      saveFilesSettings(next);
-      return next;
-    });
-  }, []);
+  const [settings, update] = useFilesSettings();
 
   return (
     <div>

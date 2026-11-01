@@ -7,14 +7,18 @@ import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Clock, X } from "@/components/icons";
+import { IconButton } from "@/components/ui/icon-button";
 import type { Calendar } from "@/lib/jmap/types";
 import { useDisplayDateFormatter } from "@/hooks/use-display-date-formatter";
+import { useCvdColor } from "@/hooks/use-cvd-color";
 
 export interface QuickCreateDraft {
   start: Date;
   end: Date;
   title: string;
   calendarId: string;
+  /** A day picked in the month view or the all-day row: an all-day event. */
+  allDay?: boolean;
 }
 
 interface QuickCreatePopoverProps {
@@ -63,6 +67,8 @@ export function QuickCreatePopover({
   onClose,
 }: QuickCreatePopoverProps) {
   const t = useTranslations("calendar");
+  const paint = useCvdColor();
+  const tCommon = useTranslations("common");
   const intlFormatter = useDisplayDateFormatter();
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -83,6 +89,18 @@ export function QuickCreatePopover({
     const frame = requestAnimationFrame(place);
     return () => cancelAnimationFrame(frame);
   }, [startKey, endKey]);
+
+  // Focus goes back where it came from (the slot a keyboard user created
+  // from) when the popover closes, unless something else has taken it.
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const popover = ref.current;
+    return () => {
+      const active = document.activeElement;
+      const lost = !active || active === document.body || (popover?.contains(active) ?? false);
+      if (lost && opener?.isConnected) opener.focus({ preventScroll: true });
+    };
+  }, []);
 
   // Focus once placed. Chrome sometimes refuses the first focus() right
   // after the slot click that opened the popover, so try again briefly.
@@ -131,7 +149,7 @@ export function QuickCreatePopover({
 
   const timeFmt = timeFormat === "12h" ? "h:mm a" : "HH:mm";
   const dateLabel = intlFormatter.dateTime(draft.start, { weekday: "long", month: "long", day: "numeric" });
-  const timeLabel = `${format(draft.start, timeFmt)} – ${format(draft.end, timeFmt)}`;
+  const timeLabel = draft.allDay ? t("events.all_day") : `${format(draft.start, timeFmt)} – ${format(draft.end, timeFmt)}`;
 
   return createPortal(
     <div
@@ -148,14 +166,9 @@ export function QuickCreatePopover({
     >
       <form onSubmit={handleSubmit}>
         <div className="flex justify-end px-2 pt-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-            aria-label={t("form.cancel")}
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <IconButton label={tCommon("close")} onClick={onClose} className="text-muted-foreground">
+            <X />
+          </IconButton>
         </div>
         <div className="px-4 pb-3 space-y-3">
           <Input
@@ -178,14 +191,14 @@ export function QuickCreatePopover({
             <div className="flex items-center gap-2.5">
               <span
                 className="w-4 h-4 rounded-sm flex-shrink-0"
-                style={{ backgroundColor: calendars.find((c) => c.id === draft.calendarId)?.color || "#3b82f6" }}
+                style={{ backgroundColor: paint(calendars.find((c) => c.id === draft.calendarId)?.color || "#3b82f6") }}
                 aria-hidden="true"
               />
               <select
                 value={draft.calendarId}
                 onChange={(e) => onChange({ ...draft, calendarId: e.target.value })}
                 aria-label={t("form.calendar_select")}
-                className="flex-1 min-w-0 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                className="flex-1 min-w-0 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-hidden"
               >
                 {calendars.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
@@ -195,10 +208,10 @@ export function QuickCreatePopover({
           )}
         </div>
         <div className="flex items-center justify-end gap-2 px-4 py-2.5 border-t border-border">
-          <Button type="button" variant="ghost" size="sm" className="h-8" onClick={onMoreOptions}>
+          <Button type="button" variant="ghost" size="xs" onClick={onMoreOptions}>
             {t("quick_create.more_options")}
           </Button>
-          <Button type="submit" size="sm" className="h-8" disabled={!canSave}>
+          <Button type="submit" size="xs" disabled={!canSave}>
             {t("form.save")}
           </Button>
         </div>

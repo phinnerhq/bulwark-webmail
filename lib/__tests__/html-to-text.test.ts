@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { htmlToPlainText } from '../html-to-text';
 
@@ -81,6 +81,20 @@ describe('htmlToPlainText', () => {
       expect(htmlToPlainText('<blockquote><p>a</p><blockquote><p>b</p></blockquote></blockquote>', mail)).toBe('> a\n>\n> > b');
     });
 
+    // Every quote level used to serialise its innerHTML and parse it again, so
+    // Reply on a long thread of nested quotes did quadratic work.
+    it('parses a deeply nested quote once', () => {
+      const depth = 300;
+      const html = '<blockquote>'.repeat(depth) + '<p>deep</p>' + '</blockquote>'.repeat(depth);
+      const parse = vi.spyOn(DOMParser.prototype, 'parseFromString');
+      try {
+        expect(htmlToPlainText(html, mail)).toBe(`${'> '.repeat(depth)}deep`);
+        expect(parse).toHaveBeenCalledTimes(1);
+      } finally {
+        parse.mockRestore();
+      }
+    });
+
     it('marks list items', () => {
       expect(htmlToPlainText('<ul><li>Revenue</li><li>Costs</li></ul><ol start="3"><li>x</li><li>y</li></ol>', mail))
         .toBe('- Revenue\n- Costs\n\n3. x\n4. y');
@@ -89,5 +103,18 @@ describe('htmlToPlainText', () => {
     it('leaves the default conversion unchanged', () => {
       expect(htmlToPlainText('<blockquote>a</blockquote><ul><li>b</li></ul>')).toBe('a\nb');
     });
+  });
+});
+
+describe('htmlToPlainText images (MA-02)', () => {
+  const imageAlt = (alt: string) => `[Image: ${alt}]`;
+
+  it('writes an image as its alt text and leaves decorative ones out', () => {
+    const html = '<p>Our plan <img src="cid:a" alt="A red bicycle"> and<img src="cid:b" alt=""> more<img src="cid:c"></p>';
+    expect(htmlToPlainText(html, { imageAlt })).toBe('Our plan [Image: A red bicycle] and more');
+  });
+
+  it('leaves images out without the option, as before', () => {
+    expect(htmlToPlainText('<p>Hi <img src="cid:a" alt="Logo"></p>')).toBe('Hi');
   });
 });

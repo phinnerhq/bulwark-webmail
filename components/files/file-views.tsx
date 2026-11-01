@@ -2,14 +2,16 @@
 
 import { useRef } from "react";
 import { useTranslations } from "next-intl";
-import { ArrowUp, ArrowDown, MoreHorizontal, Download, Share2, Star, Check } from "@/components/icons";
-import { cn, formatFileSize } from "@/lib/utils";
+import { ArrowUp, ArrowDown, MoreVertical, Download, Share2, Star, Check } from "@/components/icons";
+import { cn } from "@/lib/utils";
+import { IconButton } from "@/components/ui/icon-button";
 import type { FileResource } from "@/stores/file-store";
 import {
-  ResourceIcon, ShareBadge, Thumbnail, canShowThumbnail, formatFullDate, formatShortDate,
+  FileSize, ResourceIcon, ShareBadge, Thumbnail, canShowThumbnail, formatFullDate, formatShortDate,
   type IconOptions,
 } from "@/components/files/file-item-parts";
 import type { SortDir, SortKey } from "@/components/files/files-header";
+import { TOUCH_HIT_AREA } from "@/components/ui/button";
 
 export interface FileItemHandlers {
   /** Selection click (plain, Ctrl/Cmd, Shift) on the item body. */
@@ -21,12 +23,16 @@ export interface FileItemHandlers {
   onShare: (resource: FileResource) => void;
   canShare: (resource: FileResource) => boolean;
   dragProps: (resource: FileResource) => React.HTMLAttributes<HTMLElement> & { draggable?: boolean };
+  /** The item itself (not a button in it) took focus. */
+  onFocusItem: (resource: FileResource) => void;
 }
 
 export interface FileViewProps {
   resources: FileResource[];
   selected: Set<string>;
   focusedName: string | null;
+  /** The item that takes Tab; the arrow keys move focus from there. */
+  tabStopName: string | null;
   dropTarget: string | null;
   cutNames: Set<string>;
   starredPaths: Set<string>;
@@ -36,6 +42,8 @@ export interface FileViewProps {
   iconOptions: IconOptions;
   getImageUrl: (name: string) => Promise<string>;
   handlers: FileItemHandlers;
+  /** A line about an item, as its tooltip (where a deleted item came from). */
+  itemNote?: (resource: FileResource) => string | undefined;
 }
 
 const LONG_PRESS_MS = 450;
@@ -102,8 +110,12 @@ function SelectBox({ checked, visible, onToggle, label }: {
       onDoubleClick={(e) => e.stopPropagation()}
       className={cn(
         "w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-opacity",
+        // A 44px hit area on touch, as every Button has (R1).
+        TOUCH_HIT_AREA,
         checked ? "bg-primary border-primary text-primary-foreground" : "border-muted-foreground/50 bg-background",
-        visible || checked ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+        // Shown on hover, and also when the keyboard is in the item or on a
+        // touch screen, where there is no hover (WCAG 2.4.7).
+        visible || checked ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
       )}
     >
       {checked && <Check className="w-3 h-3" strokeWidth={3} />}
@@ -137,8 +149,8 @@ function SortHeader({ label, column, sortKey, sortDir, onSort, className }: {
 const LIST_COLUMNS = "grid grid-cols-[auto_minmax(0,1fr)_auto] sm:grid-cols-[auto_minmax(0,1fr)_5.5rem_auto] md:grid-cols-[auto_minmax(0,1fr)_9rem_5.5rem_auto] items-center gap-x-3";
 
 export function FileListView({
-  resources, selected, focusedName, dropTarget, cutNames, starredPaths, pathOf, touch, iconOptions, getImageUrl, handlers,
-  sortKey, sortDir, onSort, allSelected, someSelected, onToggleAll,
+  resources, selected, focusedName, tabStopName, dropTarget, cutNames, starredPaths, pathOf, touch, iconOptions, getImageUrl, handlers,
+  sortKey, sortDir, onSort, allSelected, someSelected, onToggleAll, itemNote, dateLabel,
 }: FileViewProps & {
   sortKey: SortKey;
   sortDir: SortDir;
@@ -146,6 +158,8 @@ export function FileListView({
   allSelected: boolean;
   someSelected: boolean;
   onToggleAll: () => void;
+  /** The date column's heading, "Modified" unless told otherwise. */
+  dateLabel?: string;
 }) {
   const t = useTranslations("files");
   const selecting = selected.size > 0;
@@ -165,7 +179,7 @@ export function FileListView({
           {someSelected && !allSelected && <span className="sr-only">{t("selected_count", { count: selected.size })}</span>}
         </div>
         <SortHeader label={t("name")} column="name" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
-        <SortHeader label={t("modified")} column="modified" sortKey={sortKey} sortDir={sortDir} onSort={onSort} className="hidden md:block" />
+        <SortHeader label={dateLabel ?? t("modified")} column="modified" sortKey={sortKey} sortDir={sortDir} onSort={onSort} className="hidden md:block" />
         <SortHeader label={t("size")} column="size" sortKey={sortKey} sortDir={sortDir} onSort={onSort} className="hidden sm:block text-end" />
         <div role="columnheader" className="w-[4.75rem]"><span className="sr-only">{t("context_menu")}</span></div>
       </div>
@@ -175,6 +189,7 @@ export function FileListView({
           resource={resource}
           isSelected={selected.has(resource.name)}
           isFocused={focusedName === resource.name}
+          isTabStop={tabStopName === resource.name}
           isDropTarget={dropTarget === resource.name}
           isCut={cutNames.has(resource.name)}
           isStarred={resource.isDirectory && starredPaths.has(pathOf(resource))}
@@ -183,16 +198,18 @@ export function FileListView({
           iconOptions={iconOptions}
           getImageUrl={getImageUrl}
           handlers={handlers}
+          note={itemNote?.(resource)}
         />
       ))}
     </div>
   );
 }
 
-function FileListRow({ resource, isSelected, isFocused, isDropTarget, isCut, isStarred, selecting, touch, iconOptions, getImageUrl, handlers }: {
+function FileListRow({ resource, isSelected, isFocused, isTabStop, isDropTarget, isCut, isStarred, selecting, touch, iconOptions, getImageUrl, handlers, note }: {
   resource: FileResource;
   isSelected: boolean;
   isFocused: boolean;
+  isTabStop: boolean;
   isDropTarget: boolean;
   isCut: boolean;
   isStarred: boolean;
@@ -201,6 +218,7 @@ function FileListRow({ resource, isSelected, isFocused, isDropTarget, isCut, isS
   iconOptions: IconOptions;
   getImageUrl: (name: string) => Promise<string>;
   handlers: FileItemHandlers;
+  note?: string;
 }) {
   const t = useTranslations("files");
   const touchProps = useTouchPress(touch, selecting, resource, handlers);
@@ -210,7 +228,8 @@ function FileListRow({ resource, isSelected, isFocused, isDropTarget, isCut, isS
       role="row"
       aria-selected={isSelected}
       data-resource={resource.name}
-      tabIndex={-1}
+      tabIndex={isTabStop ? 0 : -1}
+      onFocus={(e) => { if (e.target === e.currentTarget) handlers.onFocusItem(resource); }}
       {...handlers.dragProps(resource)}
       onClick={(e) => handlers.onSelectClick(resource, e)}
       onDoubleClick={() => handlers.onOpen(resource)}
@@ -220,7 +239,7 @@ function FileListRow({ resource, isSelected, isFocused, isDropTarget, isCut, isS
         LIST_COLUMNS,
         "group px-4 border-b border-border/60 cursor-default select-none transition-colors outline-none",
         touch ? "min-h-[52px] py-1.5" : "h-10",
-        isSelected ? "bg-primary/10" : isDropTarget ? "bg-primary/10 ring-1 ring-inset ring-primary/50" : "hover:bg-muted/60",
+        isSelected ? "bg-selection" : isDropTarget ? "bg-primary/10 ring-1 ring-inset ring-primary/50" : "hover:bg-muted/60",
         isFocused && "ring-1 ring-inset ring-ring/60",
         isCut && "opacity-50",
       )}
@@ -251,17 +270,18 @@ function FileListRow({ resource, isSelected, isFocused, isDropTarget, isCut, isS
               }}
               onDoubleClick={(e) => e.stopPropagation()}
               className={cn("truncate text-start hover:underline underline-offset-2 decoration-muted-foreground/50", resource.isDirectory && "font-medium")}
-              title={resource.name}
+              title={note ? `${resource.name}\n${note}` : resource.name}
             >
               {resource.name}
             </button>
-            {isStarred && <Star className="w-3.5 h-3.5 shrink-0 text-amber-500 fill-current" aria-label={t("favorites")} />}
+            {isStarred && <Star className="w-3.5 h-3.5 shrink-0 text-amber-400 fill-amber-400" aria-label={t("favorites")} />}
             <ShareBadge resource={resource} t={t} />
           </div>
           {touch && (
             <div className="text-xs text-muted-foreground truncate">
+              {note && <>{note} · </>}
               {formatShortDate(resource.lastModified)}
-              {!resource.isDirectory && <> · {formatFileSize(resource.contentLength)}</>}
+              {!resource.isDirectory && !resource.isSymlink && <> · <FileSize bytes={resource.contentLength} /></>}
             </div>
           )}
         </div>
@@ -270,26 +290,25 @@ function FileListRow({ resource, isSelected, isFocused, isDropTarget, isCut, isS
         {!touch && formatShortDate(resource.lastModified)}
       </div>
       <div role="gridcell" className="hidden sm:block text-muted-foreground tabular-nums text-end">
-        {!touch && (resource.isDirectory ? "—" : formatFileSize(resource.contentLength))}
+        {!touch && (resource.isDirectory || resource.isSymlink ? "—" : <FileSize bytes={resource.contentLength} />)}
       </div>
       <div role="gridcell" className="flex items-center justify-end gap-0.5 w-[4.75rem]">
-        {!touch && !resource.isDirectory && (
+        {!touch && !resource.isDirectory && !resource.isSymlink && (
           <RowAction icon={Download} label={t("download")} onClick={() => handlers.onDownload(resource)} />
         )}
         {!touch && handlers.canShare(resource) && (
           <RowAction icon={Share2} label={t("share")} onClick={() => handlers.onShare(resource)} />
         )}
-        <button
-          type="button"
+        <IconButton
           data-item-action
-          aria-label={t("more_actions", { name: resource.name })}
+          label={t("more_actions", { name: resource.name })}
           title={t("context_menu")}
           onClick={(e) => { e.stopPropagation(); handlers.onContextMenu(e, resource); }}
           onDoubleClick={(e) => e.stopPropagation()}
-          className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors"
+          className="text-muted-foreground hover:text-foreground"
         >
-          <MoreHorizontal className="w-4 h-4" />
-        </button>
+          <MoreVertical />
+        </IconButton>
       </div>
     </div>
   );
@@ -297,22 +316,20 @@ function FileListRow({ resource, isSelected, isFocused, isDropTarget, isCut, isS
 
 function RowAction({ icon: Icon, label, onClick }: { icon: React.ComponentType<{ className?: string }>; label: string; onClick: () => void }) {
   return (
-    <button
-      type="button"
+    <IconButton
       data-item-action
-      aria-label={label}
-      title={label}
+      label={label}
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       onDoubleClick={(e) => e.stopPropagation()}
-      className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-all opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+      className="text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
     >
-      <Icon className="w-4 h-4" />
-    </button>
+      <Icon />
+    </IconButton>
   );
 }
 
 export function FileGridView({
-  resources, selected, focusedName, dropTarget, cutNames, starredPaths, pathOf, touch, iconOptions, getImageUrl, handlers,
+  resources, selected, focusedName, tabStopName, dropTarget, cutNames, starredPaths, pathOf, touch, iconOptions, getImageUrl, handlers,
 }: FileViewProps) {
   const t = useTranslations("files");
   const folders = resources.filter((r) => r.isDirectory);
@@ -322,8 +339,11 @@ export function FileGridView({
   return (
     <div role="grid" aria-label={t("file_list")} aria-multiselectable className="p-4 space-y-5">
       {folders.length > 0 && (
-        <section aria-label={t("folders")}>
-          <h3 className="text-xs font-medium text-muted-foreground mb-2 px-0.5">{t("folders")}</h3>
+        // A row group, not a <section>: a grid holds rows and row groups only.
+        // The group carries the name, so the visible heading is hidden from
+        // screen readers rather than read twice.
+        <div role="rowgroup" aria-label={t("folders")}>
+          <h3 aria-hidden="true" className="text-xs font-medium text-muted-foreground mb-2 px-0.5">{t("folders")}</h3>
           <div role="row" className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-2">
             {folders.map((resource) => (
               <FolderTile
@@ -331,6 +351,7 @@ export function FileGridView({
                 resource={resource}
                 isSelected={selected.has(resource.name)}
                 isFocused={focusedName === resource.name}
+                isTabStop={tabStopName === resource.name}
                 isDropTarget={dropTarget === resource.name}
                 isCut={cutNames.has(resource.name)}
                 isStarred={starredPaths.has(pathOf(resource))}
@@ -338,11 +359,11 @@ export function FileGridView({
               />
             ))}
           </div>
-        </section>
+        </div>
       )}
       {files.length > 0 && (
-        <section aria-label={t("files_heading")}>
-          {folders.length > 0 && <h3 className="text-xs font-medium text-muted-foreground mb-2 px-0.5">{t("files_heading")}</h3>}
+        <div role="rowgroup" aria-label={t("files_heading")}>
+          {folders.length > 0 && <h3 aria-hidden="true" className="text-xs font-medium text-muted-foreground mb-2 px-0.5">{t("files_heading")}</h3>}
           <div role="row" className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-3">
             {files.map((resource) => (
               <FileTile
@@ -350,12 +371,13 @@ export function FileGridView({
                 resource={resource}
                 isSelected={selected.has(resource.name)}
                 isFocused={focusedName === resource.name}
+                isTabStop={tabStopName === resource.name}
                 isCut={cutNames.has(resource.name)}
                 {...common}
               />
             ))}
           </div>
-        </section>
+        </div>
       )}
     </div>
   );
@@ -365,6 +387,7 @@ interface TileProps {
   resource: FileResource;
   isSelected: boolean;
   isFocused: boolean;
+  isTabStop: boolean;
   isCut: boolean;
   selecting: boolean;
   touch: boolean;
@@ -373,7 +396,7 @@ interface TileProps {
   handlers: FileItemHandlers;
 }
 
-function FolderTile({ resource, isSelected, isFocused, isDropTarget, isCut, isStarred, selecting, touch, iconOptions, handlers }: TileProps & { isDropTarget: boolean; isStarred: boolean }) {
+function FolderTile({ resource, isSelected, isFocused, isTabStop, isDropTarget, isCut, isStarred, selecting, touch, iconOptions, handlers }: TileProps & { isDropTarget: boolean; isStarred: boolean }) {
   const t = useTranslations("files");
   const touchProps = useTouchPress(touch, selecting, resource, handlers);
   return (
@@ -381,6 +404,8 @@ function FolderTile({ resource, isSelected, isFocused, isDropTarget, isCut, isSt
       role="gridcell"
       aria-selected={isSelected}
       data-resource={resource.name}
+      tabIndex={isTabStop ? 0 : -1}
+      onFocus={(e) => { if (e.target === e.currentTarget) handlers.onFocusItem(resource); }}
       {...handlers.dragProps(resource)}
       onClick={(e) => handlers.onSelectClick(resource, e)}
       onDoubleClick={() => handlers.onOpen(resource)}
@@ -388,13 +413,13 @@ function FolderTile({ resource, isSelected, isFocused, isDropTarget, isCut, isSt
       {...touchProps}
       className={cn(
         "group relative flex items-center gap-2.5 h-11 ps-3 pe-1 rounded-lg border cursor-default select-none transition-colors",
-        isSelected ? "border-primary/60 bg-primary/10" : isDropTarget ? "border-primary bg-primary/10" : "border-border bg-background hover:bg-muted/60",
+        isSelected ? "border-primary/60 bg-selection" : isDropTarget ? "border-primary bg-primary/10" : "border-border bg-background hover:bg-muted/60",
         isFocused && "ring-2 ring-ring/50",
         isCut && "opacity-50",
       )}
     >
       {(selecting || !touch) && (
-        <span className={cn("absolute -top-1.5 -start-1.5", !(selecting || isSelected) && "opacity-0 group-hover:opacity-100")}>
+        <span className={cn("absolute -top-1.5 -start-1.5", !(selecting || isSelected) && "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100")}>
           <SelectBox checked={isSelected} visible onToggle={() => handlers.onToggleSelect(resource)} label={t("select_item", { name: resource.name })} />
         </span>
       )}
@@ -409,23 +434,22 @@ function FolderTile({ resource, isSelected, isFocused, isDropTarget, isCut, isSt
       >
         {resource.name}
       </button>
-      {isStarred && <Star className="w-3.5 h-3.5 shrink-0 text-amber-500 fill-current" aria-label={t("favorites")} />}
+      {isStarred && <Star className="w-3.5 h-3.5 shrink-0 text-amber-400 fill-amber-400" aria-label={t("favorites")} />}
       <ShareBadge resource={resource} t={t} />
-      <button
-        type="button"
+      <IconButton
         data-item-action
-        aria-label={t("more_actions", { name: resource.name })}
+        label={t("more_actions", { name: resource.name })}
         onClick={(e) => { e.stopPropagation(); handlers.onContextMenu(e, resource); }}
         onDoubleClick={(e) => e.stopPropagation()}
-        className={cn("p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-foreground/10", !touch && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100")}
+        className={cn("text-muted-foreground hover:text-foreground", !touch && "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100")}
       >
-        <MoreHorizontal className="w-4 h-4" />
-      </button>
+        <MoreVertical />
+      </IconButton>
     </div>
   );
 }
 
-function FileTile({ resource, isSelected, isFocused, isCut, selecting, touch, iconOptions, getImageUrl, handlers }: TileProps) {
+function FileTile({ resource, isSelected, isFocused, isTabStop, isCut, selecting, touch, iconOptions, getImageUrl, handlers }: TileProps) {
   const t = useTranslations("files");
   const touchProps = useTouchPress(touch, selecting, resource, handlers);
   const bigIcon = <ResourceIcon resource={resource} size="xl" options={iconOptions} />;
@@ -434,6 +458,8 @@ function FileTile({ resource, isSelected, isFocused, isCut, selecting, touch, ic
       role="gridcell"
       aria-selected={isSelected}
       data-resource={resource.name}
+      tabIndex={isTabStop ? 0 : -1}
+      onFocus={(e) => { if (e.target === e.currentTarget) handlers.onFocusItem(resource); }}
       {...handlers.dragProps(resource)}
       onClick={(e) => handlers.onSelectClick(resource, e)}
       onDoubleClick={() => handlers.onOpen(resource)}
@@ -441,7 +467,7 @@ function FileTile({ resource, isSelected, isFocused, isCut, selecting, touch, ic
       {...touchProps}
       className={cn(
         "group relative flex flex-col rounded-lg border overflow-hidden cursor-default select-none transition-colors",
-        isSelected ? "border-primary/60 bg-primary/10" : "border-border bg-background hover:bg-muted/60",
+        isSelected ? "border-primary/60 bg-selection" : "border-border bg-background hover:bg-muted/60",
         isFocused && "ring-2 ring-ring/50",
         isCut && "opacity-50",
       )}
@@ -458,7 +484,7 @@ function FileTile({ resource, isSelected, isFocused, isCut, selecting, touch, ic
         ) : bigIcon}
       </div>
       {(selecting || !touch) && (
-        <span className={cn("absolute top-2 start-2", !(selecting || isSelected) && "opacity-0 group-hover:opacity-100")}>
+        <span className={cn("absolute top-2 start-2", !(selecting || isSelected) && "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100")}>
           <SelectBox checked={isSelected} visible onToggle={() => handlers.onToggleSelect(resource)} label={t("select_item", { name: resource.name })} />
         </span>
       )}
@@ -475,20 +501,21 @@ function FileTile({ resource, isSelected, isFocused, isCut, selecting, touch, ic
             {resource.name}
           </button>
           <div className="flex items-center gap-1 text-xs text-muted-foreground min-w-0">
-            <span className="truncate">{formatFileSize(resource.contentLength)} · {formatShortDate(resource.lastModified)}</span>
+            <span className="truncate">
+              {!resource.isSymlink && <><FileSize bytes={resource.contentLength} /> · </>}{formatShortDate(resource.lastModified)}
+            </span>
             <ShareBadge resource={resource} t={t} className="w-3 h-3" />
           </div>
         </div>
-        <button
-          type="button"
+        <IconButton
           data-item-action
-          aria-label={t("more_actions", { name: resource.name })}
+          label={t("more_actions", { name: resource.name })}
           onClick={(e) => { e.stopPropagation(); handlers.onContextMenu(e, resource); }}
           onDoubleClick={(e) => e.stopPropagation()}
-          className={cn("p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-foreground/10 shrink-0", !touch && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100")}
+          className={cn("text-muted-foreground hover:text-foreground shrink-0", !touch && "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100")}
         >
-          <MoreHorizontal className="w-4 h-4" />
-        </button>
+          <MoreVertical />
+        </IconButton>
       </div>
     </div>
   );

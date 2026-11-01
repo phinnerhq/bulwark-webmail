@@ -1,12 +1,13 @@
 "use client";
 
-import { Suspense, useState, useEffect, useRef, useCallback } from "react";
+import { Suspense, useState, useEffect, useRef, useCallback, useId } from "react";
 import { useRouter } from "@/i18n/navigation";
 import { useParams, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
-import { useAuthStore, consumeSignedOut, providerSignOutBeforeSignIn } from "@/stores/auth-store";
+import { useAuthStore, consumeSignedOut, providerSignOutBeforeSignIn, SESSION_EXPIRED_DRAFTS_UNSAVED_KEY } from "@/stores/auth-store";
 import { useAccountStore } from "@/stores/account-store";
 import { useThemeStore } from "@/stores/theme-store";
 import { usePolicyStore } from "@/stores/policy-store";
@@ -18,7 +19,7 @@ import { cn } from "@/lib/utils";
 import { AlertCircle, Loader2, X, Info, Eye, EyeOff, LogIn, Sun, Moon, Monitor, Check, Shield, Play, Copy, KeyRound } from "@/components/icons";
 import { type OAuthMetadata } from "@/lib/oauth/discovery";
 import { generateCodeVerifier, generateCodeChallenge, generateState } from "@/lib/oauth/pkce";
-import { DEFAULT_OAUTH_SCOPES } from "@/lib/oauth/scopes";
+import { DEFAULT_OAUTH_SCOPES, withProviderDataScopes } from "@/lib/oauth/scopes";
 import { useUpdateStore, selectBanner } from "@/stores/update-store";
 import { offersOwnOAuth, type PublicJmapServerEntry } from "@/lib/admin/jmap-servers";
 import { IdpSignInList, readLastIdp, rememberLastIdp } from "@/components/auth/idp-sign-in-list";
@@ -33,8 +34,10 @@ import {
 } from "@/lib/auth/lite-oauth";
 import { toAsciiDomain } from "@/lib/idn";
 import { usePrefetchMailView } from "@/hooks/use-prefetch-mail-view";
-import { buildMobileHandoffUrl, mobileHandoffTarget } from "@/lib/auth/mobile-handoff";
+import { buildMobileHandoffUrl, mobileHandoffTarget, signedInLoginAction } from "@/lib/auth/mobile-handoff";
 import { MobileHandoffConsent } from "@/components/auth/mobile-handoff-consent";
+import { HelpLinks } from "@/components/layout/help-links";
+import { consumeSessionEnd, type SessionEndReason } from "@/lib/session-policy/sign-out-reason";
 
 /** The domain of a complete address (`user@example.com`), or '' while it is still being typed. */
 
@@ -89,19 +92,46 @@ function findServerByDomain(servers: PublicJmapServerEntry[], email: string | un
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.0.0";
 const GIT_COMMIT = process.env.NEXT_PUBLIC_GIT_COMMIT || "unknown";
 
+/** Labels are keys under settings.appearance.theme. */
 const THEME_OPTIONS = [
-  { value: "light" as const, icon: Sun, label: "Light" },
-  { value: "dark" as const, icon: Moon, label: "Dark" },
-  { value: "system" as const, icon: Monitor, label: "System" },
+  { value: "light" as const, icon: Sun, label: "light" },
+  { value: "dark" as const, icon: Moon, label: "dark" },
+  { value: "system" as const, icon: Monitor, label: "system" },
 ];
 
 function VersionBadge() {
+  const t = useTranslations("login.version");
   const [copied, setCopied] = useState(false);
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const detailsId = useId();
   const banner = useUpdateStore(useShallow(selectBanner));
   const startPolling = useUpdateStore((s) => s.startPolling);
 
   useEffect(() => { startPolling(); }, [startPolling]);
 
+  // Opened by click or keyboard (hover alone left keyboard and touch users
+  // without it): closed again by Escape or a click elsewhere.
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  // Stays English: it is pasted into bug reports.
   const versionInfo = `Version: ${APP_VERSION}\nBuild: ${GIT_COMMIT}${banner?.latest ? `\nLatest: ${banner.latest}` : ""}`;
 
   const handleCopy = () => {
@@ -115,10 +145,10 @@ function VersionBadge() {
   const triggerText = !banner
     ? `v${APP_VERSION}`
     : banner.severity === "security"
-      ? "Security update available"
+      ? t("security_update")
       : banner.severity === "deprecated"
-        ? "Version no longer supported"
-        : "New version available";
+        ? t("unsupported")
+        : t("new_version");
 
   const triggerColor = !banner
     ? "text-muted-foreground/40"
@@ -127,41 +157,52 @@ function VersionBadge() {
       : "text-amber-600/80 dark:text-amber-400/80 hover:text-amber-600 dark:hover:text-amber-400";
 
   const triggerClass = cn(
-    "peer text-center text-xs transition-colors",
+    "peer text-center text-xs transition-colors rounded-sm underline-offset-2 hover:underline",
+    "focus-visible:outline-hidden",
     triggerColor,
-    banner?.url ? "cursor-pointer underline-offset-2 hover:underline" : "cursor-default",
-  );
-
-  const trigger = banner?.url ? (
-    <a href={banner.url} target="_blank" rel="noopener noreferrer" className={triggerClass}>
-      {triggerText}
-    </a>
-  ) : (
-    <p className={triggerClass}>{triggerText}</p>
   );
 
   return (
-    <div className="relative inline-flex justify-center">
-      {trigger}
-      <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-3 py-2 rounded-md bg-popover text-popover-foreground text-xs shadow-md border border-border opacity-0 peer-hover:opacity-100 hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+    <div ref={rootRef} className="relative inline-flex justify-center">
+      <button
+        ref={triggerRef}
+        type="button"
+        className={triggerClass}
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-controls={detailsId}
+      >
+        {triggerText}
+      </button>
+      <div
+        id={detailsId}
+        role="group"
+        aria-label={t("details")}
+        className={cn(
+          "absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-3 py-2 rounded-md bg-popover text-popover-foreground text-xs shadow-md border border-border transition-opacity whitespace-nowrap z-10",
+          // Hover still previews it; only an opened one takes the focus.
+          open ? "visible opacity-100" : "invisible opacity-0 peer-hover:visible peer-hover:opacity-100 hover:visible hover:opacity-100",
+        )}
+      >
         <div className="flex items-center gap-2">
           <div className="space-y-0.5">
-            <p>Version: <span className="font-medium">{APP_VERSION}</span></p>
-            <p>Build: <span className="font-medium">{GIT_COMMIT}</span></p>
+            <p>{t("version_line", { value: APP_VERSION })}</p>
+            <p>{t("build_line", { value: GIT_COMMIT })}</p>
             {banner?.latest && (
-              <p>Latest: <span className="font-medium">{banner.latest}</span></p>
+              <p>{t("latest_line", { value: banner.latest })}</p>
             )}
             {banner?.advisory && (
-              <p className="text-red-500 dark:text-red-400">{banner.advisory}</p>
+              <p className="text-red-600 dark:text-red-400">{banner.advisory}</p>
+            )}
+            {banner?.url && (
+              <a href={banner.url} target="_blank" rel="noopener noreferrer" className="text-primary underline-offset-2 hover:underline">
+                {t("release_notes")}
+              </a>
             )}
           </div>
-          <button
-            onClick={handleCopy}
-            className="p-1 rounded hover:bg-muted transition-colors"
-            aria-label="Copy version info"
-          >
-            {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
-          </button>
+          <IconButton label={t("copy")} onClick={handleCopy}>
+            {copied ? <Check className="w-3.5 h-3.5 text-green-600 dark:text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+          </IconButton>
         </div>
       </div>
     </div>
@@ -171,6 +212,8 @@ function VersionBadge() {
 function LoginPageContent() {
   const router = useRouter();
   const t = useTranslations("login");
+  const tSessionLimits = useTranslations("session_limits");
+  const tTheme = useTranslations("settings.appearance.theme");
   const params = useParams();
   const searchParams = useSearchParams();
   const isAddAccountMode = searchParams.get("mode") === "add-account";
@@ -189,7 +232,7 @@ function LoginPageContent() {
   usePrefetchMailView(!isMobileHandoff);
   const { login, loginWithToken, loginDemo, isLoading, error, clearError, isAuthenticated } = useAuthStore();
   const { theme, setTheme, initializeTheme } = useThemeStore(useShallow((s) => ({ theme: s.theme, setTheme: s.setTheme, initializeTheme: s.initializeTheme })));
-  const { appName, jmapServerUrl: configuredServerUrl, oauthEnabled, oauthOnly, oauthClientId: globalOauthClientId, oauthIssuerUrl: globalOauthIssuerUrl, oauthScopes, rememberMeEnabled, devMode, demoMode, loginLogoLightUrl, loginLogoDarkUrl, loginCompanyName, loginImprintUrl, loginPrivacyPolicyUrl, loginWebsiteUrl, loginLogoMaxHeight, loginLogoMaxWidth, loginShowHeading, loginShowSubtitle, loginShowTotp, loginShowTokenLogin, loginShowRememberMe, loginShowVersion, isLoading: configLoading, error: configError, autoSsoEnabled, embeddedMode: _embeddedMode, allowCustomJmapEndpoint, jmapServers, jmapServerAutoPickByDomain } = useConfig();
+  const { appName, jmapServerUrl: configuredServerUrl, oauthEnabled, oauthOnly, oauthClientId: globalOauthClientId, oauthIssuerUrl: globalOauthIssuerUrl, oauthScopes, rememberMeEnabled, devMode, demoMode, loginLogoLightUrl, loginLogoDarkUrl, loginCompanyName, loginImprintUrl, loginPrivacyPolicyUrl, loginWebsiteUrl, loginUsernamePlaceholder, loginLogoMaxHeight, loginLogoMaxWidth, loginShowHeading, loginShowSubtitle, loginShowTotp, loginShowTokenLogin, loginShowRememberMe, loginShowVersion, isLoading: configLoading, error: configError, autoSsoEnabled, embeddedMode: _embeddedMode, allowCustomJmapEndpoint, jmapServers, jmapServerAutoPickByDomain } = useConfig();
   const resolvedTheme = useThemeStore((s) => s.resolvedTheme);
   const colorModeLocked = usePolicyStore((s) => s.getColorModePolicy().locked);
 
@@ -256,6 +299,9 @@ function LoginPageContent() {
   // those sessions then only last as long as the tab (lib/auth/lite-tokens.ts).
   const [liteTokenLoginSupported, setLiteTokenLoginSupported] = useState<boolean | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
+  // Signed out by the organisation's idle timeout or maximum session length.
+  const [sessionEnd, setSessionEnd] = useState<SessionEndReason | null>(null);
+  const [expiredDraftsUnsaved, setExpiredDraftsUnsaved] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [shakeError, setShakeError] = useState(false);
   const [showThemeMenu, setShowThemeMenu] = useState(false);
@@ -269,9 +315,26 @@ function LoginPageContent() {
   const [oauthLoading, setOauthLoading] = useState(false);
   const [demoLoading, setDemoLoading] = useState(false);
 
-  const suggestionsRef = useRef<HTMLDivElement>(null);
+  // The error box and the recent-accounts list, tied to the fields they
+  // belong to so a screen reader reads them with the field.
+  const formId = useId();
+  const errorId = `${formId}-error`;
+  const suggestionsId = `${formId}-suggestions`;
+  const suggestionsHintId = `${formId}-suggestions-hint`;
+  const suggestionId = (index: number) => `${formId}-suggestion-${index}`;
+  // Which field the error is about. A wrong code with a code typed blames
+  // the code; the server and network errors blame no field.
+  const totpBlamed = error === "totp_required" || (error === "invalid_credentials" && showTotpField && !!totpCode);
+  const credentialsBlamed = error === "invalid_credentials" && !totpBlamed;
+  const tokenBlamed = error === "invalid_token";
+  const errorProps = (blamed: boolean) =>
+    blamed ? { "aria-invalid": true as const, "aria-describedby": errorId } : {};
+  const suggestionsOpen = showSuggestions && filteredSuggestions.length > 0;
+  const suggestionsRef = useRef<HTMLUListElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const justSelectedSuggestion = useRef(false);
+  // A removal updated the list itself; the filter effect leaves it open.
+  const justRemovedSuggestion = useRef(false);
   const totpInputRef = useRef<HTMLInputElement>(null);
   const tokenInputRef = useRef<HTMLInputElement>(null);
   const prevError = useRef<string | null>(null);
@@ -313,6 +376,10 @@ function LoginPageContent() {
   // (LOGIN_SHOW_REMEMBER_ME).
   const showRememberMe = canRememberSession && loginShowRememberMe;
   const persistSession = canRememberSession && (!loginShowRememberMe || rememberMe);
+  // A provider sign-in follows the box whenever it is shown, the automatic
+  // one included (it starts unticked), and is remembered otherwise. Lite
+  // keeps the provider's tokens in the browser like any other sign-in.
+  const persistProviderSession = IS_LITE ? persistSession : !showRememberMe || rememberMe;
 
   // Lite on Stalwart: which provider signs the typed account in
   // (lib/auth/lite-oauth.ts). A domain Stalwart delegates to an external
@@ -341,11 +408,13 @@ function LoginPageContent() {
   // The admin gave the Application an OAuth client: offer SSO next to the form.
   const liteSsoOffered = LITE_OAUTH_AVAILABLE && !liteSsoRequired && getLiteInjectedClientId() !== "";
 
+  // The tab says what the page is for, not only whose it is (WCAG 2.4.2).
+  const pageTitle = `${isAddAccountMode ? t("add_account_title") : t("sign_in")} - ${appName}`;
   useEffect(() => {
     if (serverUrl) {
-      document.title = appName;
+      document.title = pageTitle;
     }
-  }, [appName, serverUrl]);
+  }, [pageTitle, serverUrl]);
 
   useEffect(() => {
     if (serverUrl && !jmapEndpoint) {
@@ -380,11 +449,21 @@ function LoginPageContent() {
         setSessionExpired(true);
         sessionStorage.removeItem('session_expired');
       }
+      // The expired session tried to save the open messages first (auth store).
+      if (sessionStorage.getItem(SESSION_EXPIRED_DRAFTS_UNSAVED_KEY) === 'true') {
+        setExpiredDraftsUnsaved(true);
+        sessionStorage.removeItem(SESSION_EXPIRED_DRAFTS_UNSAVED_KEY);
+      }
     } catch { /* sessionStorage unavailable */ }
+    const ended = consumeSessionEnd();
+    if (ended) {
+      setSessionEnd(ended);
+      setSessionExpired(true);
+    }
   }, []);
 
   useEffect(() => {
-    if (error && error !== prevError.current) {
+    if (error && error !== 'totp_required' && error !== prevError.current) {
       setShakeError(true);
       const timer = setTimeout(() => setShakeError(false), 400);
       return () => clearTimeout(timer);
@@ -413,22 +492,39 @@ function LoginPageContent() {
     }
   }, [serverUrl]);
 
+  // Mobile handoff: hand the verified credentials back to the mobile app
+  // instead of opening the mailbox. handleSubmit captured the values needed
+  // for the fragment. Runs once per sign-in: whichever of the effect below
+  // and handleSubmit gets here first takes the payload.
+  const offerMobileHandoff = useCallback(() => {
+    const payload = mobileHandoffPayloadRef.current;
+    if (!payload) return;
+    mobileHandoffPayloadRef.current = null;
+    // Shown to the user first; the navigation happens on their confirmation.
+    setPendingHandoff({
+      url: buildMobileHandoffUrl(mobileRedirectUri, { flow: "password", ...payload, state: mobileState }),
+      username: payload.username,
+    });
+  }, [mobileRedirectUri, mobileState]);
+
   useEffect(() => {
-    if (isAuthenticated && !isAddAccountMode) {
-      // Mobile handoff: the password path completes here once the auth store
-      // flips isAuthenticated. Hand the verified credentials back to the
-      // mobile app instead of pushing to /mail. handleSubmit captured the
-      // values needed for the fragment.
-      if (isMobileHandoff && mobileHandoffPayloadRef.current) {
-        const payload = mobileHandoffPayloadRef.current;
-        mobileHandoffPayloadRef.current = null;
-        // Shown to the user first; the navigation happens on their confirmation.
-        setPendingHandoff({
-          url: buildMobileHandoffUrl(mobileRedirectUri, { flow: "password", ...payload, state: mobileState }),
-          username: payload.username,
-        });
-        return;
-      }
+    if (!isAuthenticated) return;
+    const action = signedInLoginAction({
+      isMobileHandoff,
+      isAddAccountMode,
+      hasHandoffPayload: mobileHandoffPayloadRef.current !== null,
+    });
+    if (action === "handoff") {
+      // The password path completes here once the auth store flips
+      // isAuthenticated.
+      offerMobileHandoff();
+      return;
+    }
+    // A browser that was already signed in keeps the form: the app needs a
+    // sign-in of its own, and the mailbox would strand the user in the app's
+    // sign-in sheet. handleSubmit offers the hand-off after they sign in
+    // (isAuthenticated stays true, so this effect doesn't run again).
+    if (action === "mailbox") {
       let redirectTo = '/';
       try {
         const saved = sessionStorage.getItem('redirect_after_login');
@@ -439,7 +535,7 @@ function LoginPageContent() {
       } catch { /* ignore */ }
       router.push(toRouterPath(redirectTo));
     }
-  }, [isAuthenticated, router, isAddAccountMode, isMobileHandoff, mobileRedirectUri, mobileState]);
+  }, [isAuthenticated, router, isAddAccountMode, isMobileHandoff, offerMobileHandoff]);
 
   useEffect(() => {
     clearError();
@@ -449,6 +545,10 @@ function LoginPageContent() {
     if (!serverUrl) return;
     if (justSelectedSuggestion.current) {
       justSelectedSuggestion.current = false;
+      return;
+    }
+    if (justRemovedSuggestion.current) {
+      justRemovedSuggestion.current = false;
       return;
     }
 
@@ -553,6 +653,7 @@ function LoginPageContent() {
           redirect_uri: redirectUri,
           locale: params.locale,
           server_id: serverId,
+          remember: persistProviderSession,
           ...(isMobileHandoff
             ? { mobile_redirect_uri: mobileRedirectUri, mobile_state: mobileState }
             : {}),
@@ -584,7 +685,7 @@ function LoginPageContent() {
       setOauthLoading(false);
       return false;
     }
-  }, [params.locale, selectedServer?.id, isMobileHandoff, mobileRedirectUri, mobileState]);
+  }, [params.locale, selectedServer?.id, persistProviderSession, isMobileHandoff, mobileRedirectUri, mobileState]);
 
   useEffect(() => {
     // After signing out, show the login page rather than signing straight
@@ -742,14 +843,18 @@ function LoginPageContent() {
     }
   };
 
-  const removeUsername = (username: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const removeUsername = (username: string, e?: React.SyntheticEvent) => {
+    e?.stopPropagation();
+    justRemovedSuggestion.current = true;
     const updated = savedUsernames.filter(u => u !== username);
     localStorage.setItem("webmail_usernames", JSON.stringify(updated));
     setSavedUsernames(updated);
-    setFilteredSuggestions(updated.filter(u =>
+    const remaining = updated.filter(u =>
       u.toLowerCase().includes(formData.username.toLowerCase())
-    ));
+    );
+    setFilteredSuggestions(remaining);
+    if (remaining.length === 0) setShowSuggestions(false);
+    setSelectedSuggestionIndex(prev => Math.min(prev, remaining.length - 1));
   };
 
   const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -773,7 +878,28 @@ function LoginPageContent() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Down arrow opens the recent accounts, as in any combobox.
+    if (!showSuggestions && e.key === "ArrowDown") {
+      const candidates = formData.username === ""
+        ? savedUsernames
+        : savedUsernames.filter(u => u.toLowerCase().includes(formData.username.toLowerCase()));
+      if (candidates.length > 0) {
+        e.preventDefault();
+        setFilteredSuggestions(candidates);
+        setShowSuggestions(true);
+        setSelectedSuggestionIndex(0);
+      }
+      return;
+    }
     if (!showSuggestions || filteredSuggestions.length === 0) return;
+
+    // Delete on a highlighted account takes it off the list, like the
+    // browser's own autofill. Without a highlight it edits the text.
+    if ((e.key === "Delete" || (e.key === "Backspace" && e.shiftKey)) && selectedSuggestionIndex >= 0) {
+      e.preventDefault();
+      removeUsername(filteredSuggestions[selectedSuggestionIndex]);
+      return;
+    }
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -925,6 +1051,8 @@ function LoginPageContent() {
     if (isAddAccountMode) {
       sessionStorage.setItem("oauth_add_account_mode", "true");
     }
+    // Read back by loginWithOAuth (stores/auth-store.ts) for the code exchange.
+    sessionStorage.setItem("oauth_remember", String(persistProviderSession));
 
     // Persist the next-free cookie slot so loginWithOAuth (in stores/auth-store.ts)
     // writes the refresh token to the correct per-account jmap_rt_<slot> cookie.
@@ -940,7 +1068,7 @@ function LoginPageContent() {
     authUrl.searchParams.set("response_type", "code");
     authUrl.searchParams.set("client_id", clientId);
     authUrl.searchParams.set("redirect_uri", redirectUri);
-    authUrl.searchParams.set("scope", oauthScopes || DEFAULT_OAUTH_SCOPES);
+    authUrl.searchParams.set("scope", withProviderDataScopes(oauthScopes || DEFAULT_OAUTH_SCOPES, metadata.scopes_supported));
     authUrl.searchParams.set("state", state);
     authUrl.searchParams.set("code_challenge", challenge);
     authUrl.searchParams.set("code_challenge_method", "S256");
@@ -1003,8 +1131,11 @@ function LoginPageContent() {
       // being remembered: on a shared computer the next person sees the list.
       if (!rememberMeEnabled || persistSession) saveUsername(formData.username);
       if (isMobileHandoff) {
-        // The isAuthenticated effect handles the redirect; nothing else to
-        // do here. Don't push to / - that would race the deep link.
+        // Usually the isAuthenticated effect has offered the hand-off by
+        // now. A browser that was already signed in doesn't flip
+        // isAuthenticated, so offer it here (a no-op once taken). Don't push
+        // to / - that would race the deep link.
+        offerMobileHandoff();
         return;
       }
       router.push('/');
@@ -1066,7 +1197,7 @@ function LoginPageContent() {
         ))}
       </select>
       {domainAutoLocked && (
-        <p className="text-[11px] text-muted-foreground leading-snug">
+        <p className="text-[0.6875rem] text-muted-foreground leading-snug">
           {t("jmap_server_auto_picked")}
         </p>
       )}
@@ -1085,7 +1216,7 @@ function LoginPageContent() {
       key={s.id}
       type="button"
       variant="outline"
-      className="w-full h-11 font-medium text-[15px] rounded-xl border-border/60 hover:bg-muted/50"
+      className="w-full h-11 font-medium text-[0.9375rem] rounded-xl border-border/60 hover:bg-muted/50"
       onClick={() => handleOAuthLogin(s)}
       disabled={oauthLoading || isLoading}
     >
@@ -1094,12 +1225,33 @@ function LoginPageContent() {
     </Button>
   ));
 
+  const rememberMeBox = (
+    <label className="flex items-center gap-2.5 cursor-pointer group select-none pt-1">
+      <span className="relative flex items-center justify-center">
+        <input
+          type="checkbox"
+          checked={rememberMe}
+          onChange={(e) => setRememberMe(e.target.checked)}
+          className="peer sr-only"
+        />
+        <span className="flex items-center justify-center w-[18px] h-[18px] rounded-[5px] border border-border/80 bg-muted/40 peer-checked:bg-primary peer-checked:border-primary peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--focus-ring-color)] transition-all duration-200">
+          {rememberMe && (
+            <Check className="w-3 h-3 text-primary-foreground" stroke={3} aria-hidden="true" />
+          )}
+        </span>
+      </span>
+      <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">
+        {t("remember_me")}
+      </span>
+    </label>
+  );
+
   // Demo-only mode: show only a large demo login button
   if (demoMode && !isAddAccountMode) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-background via-muted/10 to-muted/30 relative px-4">
         {/* Theme toggle, hidden while the theme policy locks the mode (#1280) */}
-        <div className="absolute top-5 right-5" ref={themeMenuRef} hidden={colorModeLocked} suppressHydrationWarning>
+        <div className="absolute top-5 end-5" ref={themeMenuRef} hidden={colorModeLocked} suppressHydrationWarning>
           <button
             type="button"
             ref={themeButtonRef}
@@ -1110,21 +1262,21 @@ function LoginPageContent() {
                 ? "bg-secondary border-border text-foreground shadow-md"
                 : "bg-background/60 backdrop-blur-sm border-border/50 text-muted-foreground hover:text-foreground hover:bg-secondary/80 hover:border-border"
             )}
-            aria-label={`Theme: ${currentThemeOption.label}`}
+            aria-label={`${tTheme("label")}: ${tTheme(currentThemeOption.label)}`}
             aria-expanded={showThemeMenu}
             aria-haspopup="menu"
           >
             <CurrentThemeIcon className="w-4 h-4" />
-            <span className="hidden sm:inline" suppressHydrationWarning>{currentThemeOption.label}</span>
+            <span className="hidden sm:inline" suppressHydrationWarning>{tTheme(currentThemeOption.label)}</span>
           </button>
 
           {showThemeMenu && (
             <div
               ref={themeListRef}
               onKeyDown={onThemeMenuKeyDown}
-              className="absolute right-0 top-full mt-2 w-40 rounded-xl border border-border bg-background shadow-lg overflow-hidden animate-fade-in z-50"
+              className="absolute end-0 top-full mt-2 w-40 rounded-xl border border-border bg-background shadow-lg overflow-hidden animate-fade-in z-50"
               role="menu"
-              aria-label="Theme selection"
+              aria-label={tTheme("label")}
             >
               {THEME_OPTIONS.map((option) => {
                 const Icon = option.icon;
@@ -1144,7 +1296,7 @@ function LoginPageContent() {
                     )}
                   >
                     <Icon className="w-4 h-4" />
-                    <span className="flex-1 text-start">{option.label}</span>
+                    <span className="flex-1 text-start">{tTheme(option.label)}</span>
                     {isActive && <Check className="w-3.5 h-3.5 text-primary" />}
                   </button>
                 );
@@ -1175,12 +1327,12 @@ function LoginPageContent() {
             {/* Large demo button */}
             <div className="px-8 pb-10 pt-4">
               {error && (
-                <div className={cn(
+                <div role="alert" className={cn(
                   "mb-5 p-3 rounded-xl border border-destructive/20 bg-destructive/5 flex items-start gap-3",
                   shakeError && "animate-shake"
                 )}>
                   <div className="w-10 h-10 rounded-full bg-destructive/15 text-destructive flex items-center justify-center flex-shrink-0 shadow-sm">
-                    <AlertCircle className="w-5 h-5" />
+                    <AlertCircle className="w-5 h-5" aria-hidden="true" />
                   </div>
                   <div className="flex-1 min-w-0 self-center">
                     <p className="text-sm text-destructive leading-relaxed">
@@ -1218,29 +1370,30 @@ function LoginPageContent() {
           {/* Footer */}
           <div className="mt-6 flex flex-col items-center gap-2">
             {loginCompanyName && (
-              <p className="text-center text-xs text-muted-foreground/60 font-medium">
+              <p className="text-center text-xs text-muted-foreground font-medium">
                 {loginCompanyName}
               </p>
             )}
             {(loginImprintUrl || loginPrivacyPolicyUrl || loginWebsiteUrl) && (
               <div className="flex items-center gap-3 flex-wrap justify-center">
                 {loginWebsiteUrl && (
-                  <a href={loginWebsiteUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors">
+                  <a href={loginWebsiteUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-muted-foreground transition-colors">
                     {t("website")}
                   </a>
                 )}
                 {loginImprintUrl && (
-                  <a href={loginImprintUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors">
+                  <a href={loginImprintUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-muted-foreground transition-colors">
                     {t("imprint")}
                   </a>
                 )}
                 {loginPrivacyPolicyUrl && (
-                  <a href={loginPrivacyPolicyUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors">
+                  <a href={loginPrivacyPolicyUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-muted-foreground transition-colors">
                     {t("privacy_policy")}
                   </a>
                 )}
               </div>
             )}
+            <HelpLinks listClassName="justify-center" />
             {loginShowVersion && <VersionBadge />}
           </div>
         </div>
@@ -1259,7 +1412,7 @@ function LoginPageContent() {
         }}
       />
       {/* Theme toggle - top right, dropdown style; hidden while the theme policy locks the mode (#1280) */}
-      <div className="absolute top-5 right-5" ref={themeMenuRef} hidden={colorModeLocked} suppressHydrationWarning>
+      <div className="absolute top-5 end-5" ref={themeMenuRef} hidden={colorModeLocked} suppressHydrationWarning>
         <button
           type="button"
           ref={themeButtonRef}
@@ -1270,21 +1423,21 @@ function LoginPageContent() {
               ? "bg-secondary border-border text-foreground shadow-md"
               : "bg-background/60 backdrop-blur-sm border-border/50 text-muted-foreground hover:text-foreground hover:bg-secondary/80 hover:border-border"
           )}
-          aria-label={`Theme: ${currentThemeOption.label}`}
+          aria-label={`${tTheme("label")}: ${tTheme(currentThemeOption.label)}`}
           aria-expanded={showThemeMenu}
           aria-haspopup="menu"
         >
           <CurrentThemeIcon className="w-4 h-4" />
-          <span className="hidden sm:inline" suppressHydrationWarning>{currentThemeOption.label}</span>
+          <span className="hidden sm:inline" suppressHydrationWarning>{tTheme(currentThemeOption.label)}</span>
         </button>
 
         {showThemeMenu && (
           <div
             ref={themeListRef}
             onKeyDown={onThemeMenuKeyDown}
-            className="absolute right-0 top-full mt-2 w-40 rounded-xl border border-border bg-background shadow-lg overflow-hidden animate-fade-in z-50"
+            className="absolute end-0 top-full mt-2 w-40 rounded-xl border border-border bg-background shadow-lg overflow-hidden animate-fade-in z-50"
             role="menu"
-            aria-label="Theme selection"
+            aria-label={tTheme("label")}
           >
             {THEME_OPTIONS.map((option) => {
               const Icon = option.icon;
@@ -1304,7 +1457,7 @@ function LoginPageContent() {
                   )}
                 >
                   <Icon className="w-4 h-4" />
-                  <span className="flex-1 text-start">{option.label}</span>
+                  <span className="flex-1 text-start">{tTheme(option.label)}</span>
                   {isActive && <Check className="w-3.5 h-3.5 text-primary" />}
                 </button>
               );
@@ -1333,7 +1486,7 @@ function LoginPageContent() {
             )}
             {loginShowSubtitle && (
               <p className="text-sm text-muted-foreground mt-1.5">
-                {isAddAccountMode ? t("add_account_subtitle") : (t("title") !== appName ? t("title") : "Sign in to your account")}
+                {isAddAccountMode ? t("add_account_subtitle") : t("subtitle")}
               </p>
             )}
           </div>
@@ -1351,8 +1504,15 @@ function LoginPageContent() {
                   <Info className="w-5 h-5" />
                 </div>
                 <div className="flex-1 min-w-0 self-center flex items-center gap-2">
-                  <p className="text-sm text-info flex-1 leading-relaxed">
-                    {t("session_expired")}
+                  <p className="text-sm text-info flex-1 leading-relaxed" data-testid="session-expired-reason">
+                    {sessionEnd?.kind === "idle"
+                      ? tSessionLimits("reason_idle", { minutes: sessionEnd.minutes })
+                      : sessionEnd?.kind === "max"
+                        ? tSessionLimits("reason_max", { hours: sessionEnd.hours })
+                        : t("session_expired")}
+                    {(sessionEnd?.draftsUnsaved || expiredDraftsUnsaved) && (
+                      <span className="block mt-1" data-testid="session-drafts-not-saved">{tSessionLimits("drafts_not_saved")}</span>
+                    )}
                   </p>
                   <button
                     type="button"
@@ -1366,17 +1526,26 @@ function LoginPageContent() {
               </div>
             )}
 
-            {/* Error Message */}
+            {/* Error Message. Asking for the code is the next step of a
+                sign-in that worked so far, not a failure (#1422). */}
             {error && (
-              <div className={cn(
-                "mb-5 p-3 rounded-xl border border-destructive/20 bg-destructive/5 flex items-start gap-3",
-                shakeError && "animate-shake"
-              )}>
-                <div className="w-10 h-10 rounded-full bg-destructive/15 text-destructive flex items-center justify-center flex-shrink-0 shadow-sm">
-                  <AlertCircle className="w-5 h-5" />
+              <div
+                className={cn(
+                  "mb-5 p-3 rounded-xl border flex items-start gap-3",
+                  error === 'totp_required' ? "border-info/20 bg-info/5" : "border-destructive/20 bg-destructive/5",
+                  shakeError && "animate-shake"
+                )}
+                data-testid="login-error"
+                role={error === 'totp_required' ? "status" : "alert"}
+              >
+                <div className={cn(
+                  "w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm",
+                  error === 'totp_required' ? "bg-info/15 text-info" : "bg-destructive/15 text-destructive"
+                )}>
+                  {error === 'totp_required' ? <Info className="w-5 h-5" aria-hidden="true" /> : <AlertCircle className="w-5 h-5" aria-hidden="true" />}
                 </div>
                 <div className="flex-1 min-w-0 self-center">
-                  <p className="text-sm text-destructive leading-relaxed">
+                  <p id={errorId} className={cn("text-sm leading-relaxed", error === 'totp_required' ? "text-info" : "text-destructive")}>
                     {error === 'invalid_credentials' && showTotpField && totpCode
                       ? t('error.totp_invalid')
                       : t(`error.${error}`) || t("error.generic")}
@@ -1422,10 +1591,11 @@ function LoginPageContent() {
               /* OAuth-only mode: server picker (if any) plus the SSO button */
               <div className="space-y-4">
                 {serverPicker}
+                {oauthMetadata && showRememberMe && rememberMeBox}
                 {oauthMetadata ? (
                   <Button
                     type="button"
-                    className="w-full h-11 font-medium text-[15px] bg-primary hover:bg-primary/90 transition-all duration-200 rounded-xl shadow-md shadow-primary/15 hover:shadow-lg hover:shadow-primary/20"
+                    className="w-full h-11 font-medium text-[0.9375rem] bg-primary hover:bg-primary/90 transition-all duration-200 rounded-xl shadow-md shadow-primary/15 hover:shadow-lg hover:shadow-primary/20"
                     onClick={() => handleOAuthLogin()}
                     disabled={oauthLoading}
                   >
@@ -1478,7 +1648,7 @@ function LoginPageContent() {
                         placeholder={t("jmap_endpoint_placeholder")}
                         required
                       />
-                      <p className="text-[11px] text-muted-foreground leading-snug">
+                      <p className="text-[0.6875rem] text-muted-foreground leading-snug">
                         {t("jmap_endpoint_cors_hint")}
                       </p>
                     </div>
@@ -1500,41 +1670,66 @@ function LoginPageContent() {
                         onFocus={handleUsernameFocus}
                         onKeyDown={handleKeyDown}
                         className="h-11 px-3.5 bg-muted/40 border-border/60 rounded-xl focus:bg-background focus:border-primary/50 transition-all duration-200"
-                        placeholder={t("username_placeholder")}
+                        placeholder={loginUsernamePlaceholder || t("username_placeholder")}
                         required={!signInWithToken}
-                        autoComplete="off"
-                        data-form-type="other"
-                        data-lpignore="true"
+                        // Password managers fill and save the pair by this (WCAG 3.3.8).
+                        autoComplete="username"
                         autoFocus
+                        // The recent accounts are a combobox's list: the arrow
+                        // keys move through them while the focus stays here.
+                        role={savedUsernames.length > 0 ? "combobox" : undefined}
+                        aria-autocomplete={savedUsernames.length > 0 ? "list" : undefined}
+                        aria-expanded={savedUsernames.length > 0 ? suggestionsOpen : undefined}
+                        aria-controls={suggestionsOpen ? suggestionsId : undefined}
+                        aria-activedescendant={suggestionsOpen && selectedSuggestionIndex >= 0 ? suggestionId(selectedSuggestionIndex) : undefined}
+                        aria-invalid={credentialsBlamed || undefined}
+                        aria-describedby={[credentialsBlamed ? errorId : null, suggestionsOpen ? suggestionsHintId : null].filter(Boolean).join(" ") || undefined}
                       />
 
-                      {/* Custom autocomplete dropdown */}
-                      {showSuggestions && filteredSuggestions.length > 0 && (
-                        <div
-                          ref={suggestionsRef}
-                          className="absolute top-full mt-1.5 w-full bg-background border border-border rounded-xl shadow-lg z-50 overflow-hidden"
-                        >
-                          {filteredSuggestions.map((username, index) => (
-                            <div
-                              key={username}
-                              className={cn(
-                                "px-3.5 py-2.5 flex items-center justify-between hover:bg-muted cursor-pointer transition-colors",
-                                index === selectedSuggestionIndex && "bg-muted"
-                              )}
-                              onClick={() => selectSuggestion(username)}
-                            >
-                              <span className="text-sm text-foreground">{username}</span>
-                              <button
-                                type="button"
-                                onClick={(e) => removeUsername(username, e)}
-                                className="p-1 hover:bg-secondary rounded-md transition-colors"
-                                title={t("remove_from_history")}
+                      {/* Recent accounts on this device */}
+                      {suggestionsOpen && (
+                        <>
+                          <span id={suggestionsHintId} className="sr-only">{t("recent_accounts_hint")}</span>
+                          <ul
+                            ref={suggestionsRef}
+                            id={suggestionsId}
+                            role="listbox"
+                            aria-label={t("recent_accounts")}
+                            className="absolute top-full mt-1.5 w-full bg-background border border-border rounded-xl shadow-lg z-50 overflow-hidden"
+                          >
+                            {filteredSuggestions.map((username, index) => (
+                              <li
+                                key={username}
+                                id={suggestionId(index)}
+                                role="option"
+                                aria-selected={index === selectedSuggestionIndex}
+                                aria-label={username}
+                                className={cn(
+                                  "px-3.5 py-2.5 flex items-center justify-between hover:bg-muted cursor-pointer transition-colors",
+                                  index === selectedSuggestionIndex && "bg-muted"
+                                )}
+                                // Keep the focus (and the caret) in the field.
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => selectSuggestion(username)}
                               >
-                                <X className="w-3 h-3 text-muted-foreground" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
+                                <span className="text-sm text-foreground">{username}</span>
+                                {/* Out of the tab order: from the keyboard, Delete
+                                    removes the highlighted account. Named, so
+                                    voice control can still press it. */}
+                                <button
+                                  type="button"
+                                  tabIndex={-1}
+                                  onClick={(e) => removeUsername(username, e)}
+                                  className="p-1 hover:bg-secondary rounded-md transition-colors"
+                                  aria-label={t("remove_account_from_list", { username })}
+                                  title={t("remove_from_history")}
+                                >
+                                  <X className="w-3 h-3 text-muted-foreground" aria-hidden="true" />
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        </>
                       )}
                     </div>
                   </div>
@@ -1556,18 +1751,23 @@ function LoginPageContent() {
                         placeholder={t("password_placeholder")}
                         required={!liteSsoRequired && !signInWithToken}
                         autoComplete="current-password"
+                        {...errorProps(credentialsBlamed)}
                       />
+                      {/* In the tab order, so keyboard users can check what
+                          they typed. One name, the state in aria-pressed. */}
                       <button
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-md text-muted-foreground hover:text-foreground transition-colors"
-                        aria-label={showPassword ? t("hide_password") : t("show_password")}
-                        tabIndex={-1}
+                        className="absolute end-3 top-1/2 -translate-y-1/2 p-1 rounded-md text-muted-foreground hover:text-foreground transition-colors"
+                        aria-label={t("show_password")}
+                        aria-pressed={showPassword}
+                        aria-controls="password"
+                        title={showPassword ? t("hide_password") : t("show_password")}
                       >
                         {showPassword ? (
-                          <EyeOff className="w-4 h-4" />
+                          <EyeOff className="w-4 h-4" aria-hidden="true" />
                         ) : (
-                          <Eye className="w-4 h-4" />
+                          <Eye className="w-4 h-4" aria-hidden="true" />
                         )}
                       </button>
                     </div>
@@ -1590,8 +1790,9 @@ function LoginPageContent() {
                         autoComplete="off"
                         spellCheck={false}
                         data-lpignore="true"
+                        {...errorProps(tokenBlamed)}
                       />
-                      <p className="text-[11px] text-muted-foreground leading-snug">
+                      <p className="text-[0.6875rem] text-muted-foreground leading-snug">
                         {t("token_hint")}
                       </p>
                     </div>
@@ -1634,7 +1835,7 @@ function LoginPageContent() {
                         )}
                         placeholder={t("totp_placeholder")}
                         autoComplete="one-time-code"
-                        aria-label={t("totp_label")}
+                        {...errorProps(totpBlamed)}
                       />
                     </div>
                   )}
@@ -1654,34 +1855,13 @@ function LoginPageContent() {
                     </button>
                   )}
 
-                  {/* Remember me */}
-                  {showRememberMe && (
-                    <label className="flex items-center gap-2.5 cursor-pointer group select-none pt-1">
-                      <span className="relative flex items-center justify-center">
-                        <input
-                          type="checkbox"
-                          checked={rememberMe}
-                          onChange={(e) => setRememberMe(e.target.checked)}
-                          className="peer sr-only"
-                        />
-                        <span className="flex items-center justify-center w-[18px] h-[18px] rounded-[5px] border border-border/80 bg-muted/40 peer-checked:bg-primary peer-checked:border-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background transition-all duration-200">
-                          {rememberMe && (
-                            <svg className="w-3 h-3 text-primary-foreground" viewBox="0 0 12 12" fill="none">
-                              <path d="M2 6L5 9L10 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                          )}
-                        </span>
-                      </span>
-                      <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">
-                        {t("remember_me")}
-                      </span>
-                    </label>
-                  )}
+                  {/* Remember me, for the password and the SSO buttons below */}
+                  {showRememberMe && rememberMeBox}
                 </fieldset>
 
                 <Button
                   type="submit"
-                  className="w-full h-11 font-medium text-[15px] bg-primary hover:bg-primary/90 transition-all duration-200 rounded-xl shadow-md shadow-primary/15 hover:shadow-lg hover:shadow-primary/20"
+                  className="w-full h-11 font-medium text-[0.9375rem] bg-primary hover:bg-primary/90 transition-all duration-200 rounded-xl shadow-md shadow-primary/15 hover:shadow-lg hover:shadow-primary/20"
                   disabled={isLoading || (liteSsoRequired && oauthLoading)}
                 >
                   {isLoading || (liteSsoRequired && oauthLoading) ? (
@@ -1703,7 +1883,7 @@ function LoginPageContent() {
                       <div className="absolute inset-0 flex items-center">
                         <span className="w-full border-t border-border/60" />
                       </div>
-                      <div className="relative flex justify-center text-xs uppercase">
+                      <div className="relative flex justify-center text-xs">
                         <span className="bg-background/80 px-3 text-muted-foreground">{t("or")}</span>
                       </div>
                     </div>
@@ -1712,7 +1892,7 @@ function LoginPageContent() {
                       <Button
                         type="button"
                         variant="outline"
-                        className="w-full h-11 font-medium text-[15px] rounded-xl border-border/60 hover:bg-muted/50"
+                        className="w-full h-11 font-medium text-[0.9375rem] rounded-xl border-border/60 hover:bg-muted/50"
                         onClick={() => handleOAuthLogin()}
                         disabled={oauthLoading || isLoading}
                       >
@@ -1762,7 +1942,7 @@ function LoginPageContent() {
                 <Button
                   type="button"
                   variant="outline"
-                  className="w-full h-11 font-medium text-[15px] rounded-xl border-border/60 hover:bg-muted/50"
+                  className="w-full h-11 font-medium text-[0.9375rem] rounded-xl border-border/60 hover:bg-muted/50"
                   onClick={handleDemoLogin}
                   disabled={demoLoading || isLoading}
                 >
@@ -1789,7 +1969,7 @@ function LoginPageContent() {
         {/* Company name & links - below card */}
         <div className="mt-6 flex flex-col items-center gap-2">
           {loginCompanyName && (
-            <p className="text-center text-xs text-muted-foreground/60 font-medium">
+            <p className="text-center text-xs text-muted-foreground font-medium">
               {loginCompanyName}
             </p>
           )}
@@ -1800,7 +1980,7 @@ function LoginPageContent() {
                   href={loginWebsiteUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                  className="text-xs text-muted-foreground hover:text-muted-foreground transition-colors"
                 >
                   {t("website")}
                 </a>
@@ -1810,7 +1990,7 @@ function LoginPageContent() {
                   href={loginImprintUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                  className="text-xs text-muted-foreground hover:text-muted-foreground transition-colors"
                 >
                   {t("imprint")}
                 </a>
@@ -1820,13 +2000,14 @@ function LoginPageContent() {
                   href={loginPrivacyPolicyUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                  className="text-xs text-muted-foreground hover:text-muted-foreground transition-colors"
                 >
                   {t("privacy_policy")}
                 </a>
               )}
             </div>
           )}
+          <HelpLinks listClassName="justify-center" />
           {loginShowVersion && <VersionBadge />}
         </div>
       </div>
