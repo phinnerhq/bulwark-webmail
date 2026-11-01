@@ -4,12 +4,12 @@ import { useMemo } from "react";
 import { useTranslations } from "next-intl";
 import { X, Download, Share2, Star, StarOff, FolderOpen, Eye, SquarePen, Files } from "@/components/icons";
 import { Button } from "@/components/ui/button";
-import { cn, formatFileSize } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import type { FileResource } from "@/stores/file-store";
 import type { FileResourceView } from "@/lib/plugin-types";
 import { PluginSlot } from "@/components/plugins/plugin-slot";
 import {
-  ResourceIcon, Thumbnail, canShowThumbnail, formatFullDate, type IconOptions,
+  FileSize, ResourceIcon, Thumbnail, canShowThumbnail, formatFullDate, type IconOptions,
 } from "@/components/files/file-item-parts";
 
 interface FileDetailsPanelProps {
@@ -40,13 +40,14 @@ interface FileDetailsPanelProps {
 
 function kindOf(resource: FileResource, t: (key: string, values?: Record<string, string>) => string): string {
   if (resource.isDirectory) return t("folder");
+  if (resource.isSymlink) return t("symlink");
   const dot = resource.name.lastIndexOf(".");
   const ext = dot > 0 ? resource.name.slice(dot + 1).toUpperCase() : "";
   return ext ? t("file_kind", { ext }) : (resource.contentType || t("file"));
 }
 
 function totalSize(items: FileResource[]): number {
-  return items.reduce((sum, r) => sum + (r.isDirectory ? 0 : r.contentLength), 0);
+  return items.reduce((sum, r) => sum + (r.isDirectory || r.isSymlink ? 0 : r.contentLength), 0);
 }
 
 export function FileDetailsPanel({
@@ -81,7 +82,7 @@ export function FileDetailsPanel({
         <div className="aspect-[4/3] rounded-lg bg-muted/50 flex items-center justify-center">
           {selection.length > 1
             ? <Files className="w-14 h-14 text-muted-foreground" />
-            : <FolderOpen className="w-14 h-14 text-blue-500" />}
+            : <FolderOpen className="w-14 h-14 text-primary" />}
         </div>
         <div>
           <p className="font-medium break-words">
@@ -90,7 +91,7 @@ export function FileDetailsPanel({
           <p className="text-sm text-muted-foreground">{t("folder_summary", { folders, files })}</p>
         </div>
         <dl className="space-y-3 text-sm">
-          <Row label={t("size")} value={formatFileSize(totalSize(items))} />
+          <Row label={t("size")} value={<FileSize bytes={totalSize(items)} />} />
           {selection.length <= 1 && <Row label={t("path")} value={path} mono />}
         </dl>
         {selection.length <= 1 && (
@@ -137,7 +138,7 @@ export function FileDetailsPanel({
             <Eye className="w-4 h-4" />{t("preview")}
           </Button>
         ) : null}
-        {!resource.isDirectory && (
+        {!resource.isDirectory && !resource.isSymlink && (
           <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={onDownload}>
             <Download className="w-4 h-4" />{t("download")}
           </Button>
@@ -155,8 +156,11 @@ export function FileDetailsPanel({
         )}
       </div>
       <dl className="space-y-3 text-sm">
-        <Row label={t("type")} value={resource.isDirectory ? t("folder") : (resource.contentType || kindOf(resource, t))} />
-        {!resource.isDirectory && <Row label={t("size")} value={formatFileSize(resource.contentLength)} />}
+        <Row
+          label={t("type")}
+          value={resource.isDirectory || resource.isSymlink ? kindOf(resource, t) : (resource.contentType || kindOf(resource, t))}
+        />
+        {!resource.isDirectory && !resource.isSymlink && <Row label={t("size")} value={<FileSize bytes={resource.contentLength} />} />}
         {resource.lastModified && <Row label={t("modified")} value={formatFullDate(resource.lastModified)} />}
         <Row label={t("sharing")} value={sharing} />
         <Row label={t("path")} value={path} mono />
@@ -166,7 +170,7 @@ export function FileDetailsPanel({
   );
 }
 
-function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function Row({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
   return (
     <div>
       <dt className="text-xs text-muted-foreground">{label}</dt>

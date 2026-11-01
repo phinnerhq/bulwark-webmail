@@ -24,6 +24,7 @@ export function createConfig(overrides: Partial<ConfigData> = {}): ConfigData {
     loginImprintUrl: '',
     loginPrivacyPolicyUrl: '',
     loginWebsiteUrl: '',
+    loginUsernamePlaceholder: '',
     loginLogoMaxHeight: '',
     loginLogoMaxWidth: '',
     loginShowHeading: true,
@@ -41,6 +42,12 @@ export function createConfig(overrides: Partial<ConfigData> = {}): ConfigData {
     parentOrigin: '',
     sourceCodeUrl: '',
     maskedAddressDomain: '',
+    accessibilityStatementUrl: '',
+    accessibilityFeedbackUrl: '',
+    helpUrl: '',
+    easyReadUrl: '',
+    signLanguageUrl: '',
+    noThirdPartyTraffic: false,
     ...overrides,
   };
 }

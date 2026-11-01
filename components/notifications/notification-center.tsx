@@ -9,6 +9,8 @@ import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { isDocumentRTL } from "@/i18n/direction";
 import { toastHooks } from "@/lib/plugin-hooks";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import {
   selectUnreadCount,
   useNotificationCenterStore,
@@ -58,34 +60,20 @@ export function NotificationPanel({ onClose, className, sheet = false }: { onClo
   return (
     <div className={cn("flex flex-col bg-background text-foreground", className)} data-notification-panel="">
       <div className="flex items-center gap-1 px-3 h-12 border-b border-border shrink-0">
-        <h2 className="flex-1 min-w-0 truncate text-sm font-semibold">{t("title")}</h2>
-        <button
-          type="button"
-          onClick={markAllRead}
-          disabled={unread === 0}
-          className="inline-flex items-center gap-1 h-8 px-2 rounded-md text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50 disabled:pointer-events-none transition-colors"
-        >
+        {/* Full screen on a phone it is a dialog of its own, titled like one. */}
+        <h2 className={cn("flex-1 min-w-0 truncate font-semibold", sheet ? "text-lg" : "text-sm")}>{t("title")}</h2>
+        <Button variant="ghost" size="xs" onClick={markAllRead} disabled={unread === 0} className="gap-1 px-2 text-xs text-muted-foreground">
           <CheckCheck className="w-4 h-4" />
           <span>{t("mark_all_read")}</span>
-        </button>
-        <button
-          type="button"
-          onClick={clear}
-          disabled={entries.length === 0}
-          className="inline-flex items-center gap-1 h-8 px-2 rounded-md text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50 disabled:pointer-events-none transition-colors"
-        >
+        </Button>
+        <Button variant="ghost" size="xs" onClick={clear} disabled={entries.length === 0} className="gap-1 px-2 text-xs text-muted-foreground">
           <Trash2 className="w-4 h-4" />
           <span>{t("clear")}</span>
-        </button>
+        </Button>
         {sheet && (
-          <button
-            type="button"
-            onClick={onClose}
-            className="grid place-items-center h-10 w-10 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-            aria-label={t("close")}
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <IconButton size="icon-lg" label={t("close")} title="" onClick={onClose} className="text-muted-foreground">
+            <X />
+          </IconButton>
         )}
       </div>
       {entries.length === 0 ? (
@@ -100,12 +88,12 @@ export function NotificationPanel({ onClose, className, sheet = false }: { onClo
                 <span className="flex-1 min-w-0">
                   <span className="flex items-baseline gap-2">
                     <span className={cn("flex-1 min-w-0 truncate text-sm", !entry.read && "font-semibold")}>{entry.title}</span>
-                    <time dateTime={new Date(entry.time).toISOString()} className="flex-shrink-0 text-[11px] text-muted-foreground tabular-nums">
+                    <time dateTime={new Date(entry.time).toISOString()} className="flex-shrink-0 text-[0.6875rem] text-muted-foreground tabular-nums">
                       {format.relativeTime(new Date(entry.time), now)}
                     </time>
                   </span>
                   {entry.body && <span className="block text-xs text-muted-foreground line-clamp-2 break-words">{entry.body}</span>}
-                  <span className="block text-[11px] text-muted-foreground truncate">
+                  <span className="block text-[0.6875rem] text-muted-foreground truncate">
                     {entry.level !== "info" && <span className="sr-only">{t(entry.level === "error" ? "level_error" : "level_warning")}: </span>}
                     {source}
                   </span>
@@ -138,7 +126,7 @@ export function NotificationPanel({ onClose, className, sheet = false }: { onClo
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={() => markRead(entry.id)}
-                    className="-mt-1 mb-1 ms-[38px] inline-flex items-center gap-1 rounded text-xs font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="-mt-1 mb-1 ms-[38px] inline-flex items-center gap-1 rounded text-xs font-medium text-primary hover:underline focus-visible:outline-hidden"
                   >
                     {entry.action.label}
                     <ExternalLink className="w-3 h-3" aria-hidden="true" />
@@ -151,6 +139,11 @@ export function NotificationPanel({ onClose, className, sheet = false }: { onClo
       )}
     </div>
   );
+}
+
+/** The panel's enabled controls, in tab order. */
+function panelControls(panel: HTMLElement): HTMLElement[] {
+  return Array.from(panel.querySelectorAll<HTMLElement>("button:not(:disabled), a[href]"));
 }
 
 /** The phone version: the panel over the whole screen. */
@@ -205,6 +198,32 @@ export function NotificationBell({ placement, className }: { placement: "side" |
     if (open) position();
   }, [open, position]);
 
+  // The panel is portalled to the end of <body>, so Tab from the bell would
+  // never reach it: focus moves in on open, to its first control (or the
+  // panel itself while every control is disabled).
+  useEffect(() => {
+    if (!open) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    (panelControls(panel)[0] ?? panel).focus();
+  }, [open]);
+
+  // Tab past either end of the panel closes it and goes back to the bell, so
+  // the next Tab carries on from where the panel was opened.
+  const onPanelKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "Tab" || !panelRef.current) return;
+    const controls = panelControls(panelRef.current);
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    const active = document.activeElement;
+    const leaving = controls.length === 0
+      || (e.shiftKey ? active === first || active === panelRef.current : active === last);
+    if (!leaving) return;
+    e.preventDefault();
+    setOpen(false);
+    buttonRef.current?.focus();
+  };
+
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (e: MouseEvent) => {
@@ -250,7 +269,7 @@ export function NotificationBell({ placement, className }: { placement: "side" |
         {unread > 0 && (
           <span
             className={cn(
-              "absolute flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold",
+              "absolute flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-red-600 text-white text-[0.625rem] font-bold",
               placement === "side" ? "-top-0.5 -end-0.5" : "top-1.5 end-1.5",
             )}
             aria-hidden="true"
@@ -264,6 +283,8 @@ export function NotificationBell({ placement, className }: { placement: "side" |
           ref={panelRef}
           role="dialog"
           aria-label={t("title")}
+          tabIndex={-1}
+          onKeyDown={onPanelKeyDown}
           style={style}
           className="z-50 w-[22rem] max-w-[calc(100vw-1rem)] max-h-[min(32rem,80vh)] flex flex-col overflow-hidden rounded-lg border border-border bg-background shadow-lg"
         >

@@ -23,6 +23,7 @@ export function ComposingSettings() {
   const [newKeyword, setNewKeyword] = useState('');
 
   const {
+    quickReplyEnabled,
     autoSelectReplyIdentity,
     replyIdentityMatch,
     plainTextMode,
@@ -30,6 +31,7 @@ export function ComposingSettings() {
     attachmentReminderEnabled,
     attachmentReminderKeywords,
     emptySubjectWarningEnabled,
+    placeholderWarningEnabled,
     recipientMentionsEnabled,
     mentionAddsRecipientTo,
     sendDelaySeconds,
@@ -84,6 +86,13 @@ export function ComposingSettings() {
       </SettingsSection>
 
       <SettingsSection id="replying" title={tPage('sections.replying')}>
+        <SettingItem label={t('quick_reply.label')} description={t('quick_reply.description')}>
+          <ToggleSwitch
+            checked={quickReplyEnabled}
+            onChange={(checked) => updateSetting('quickReplyEnabled', checked)}
+          />
+        </SettingItem>
+
         <SettingItem label={t('auto_select_reply_identity.label')} description={t('auto_select_reply_identity.description')}>
           <ToggleSwitch
             checked={autoSelectReplyIdentity}
@@ -181,11 +190,12 @@ export function ComposingSettings() {
               }}
             >
               <input
+                aria-label={t('attachment_reminder.add_placeholder')}
                 type="text"
                 value={newKeyword}
                 onChange={(e) => setNewKeyword(e.target.value)}
                 placeholder={t('attachment_reminder.add_placeholder')}
-                className="flex-1 min-w-0 px-2 py-1 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-ring"
+                className="flex-1 min-w-0 px-2 py-1 text-sm bg-background border border-border rounded-md focus:outline-hidden"
               />
               <button
                 type="submit"
@@ -202,6 +212,13 @@ export function ComposingSettings() {
           <ToggleSwitch
             checked={emptySubjectWarningEnabled}
             onChange={(checked) => updateSetting('emptySubjectWarningEnabled', checked)}
+          />
+        </SettingItem>
+
+        <SettingItem label={t('placeholder_warning.label')} description={t('placeholder_warning.description')}>
+          <ToggleSwitch
+            checked={placeholderWarningEnabled}
+            onChange={(checked) => updateSetting('placeholderWarningEnabled', checked)}
           />
         </SettingItem>
       </SettingsSection>

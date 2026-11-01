@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { ComposerToolbarMenu, ComposerToolbarMenuItem, ComposerToolbarMenuCheckItem } from '../composer-toolbar-menu';
 import { Paperclip } from '@/components/icons';
 
@@ -16,7 +16,20 @@ describe('ComposerToolbarMenu', () => {
     expect(button).toHaveTextContent('2');
   });
 
-  it('keeps the menu open while toggling options and closes on Escape or outside click', () => {
+  // A composer pane on a wide screen is narrow too: the labels go by the
+  // bar's width, not the window's, or they run under Send (#1375).
+  it('shows its label only when the composer bar is wide enough', () => {
+    render(
+      <ComposerToolbarMenu icon={Paperclip} label="Options" testId="menu">
+        {() => null}
+      </ComposerToolbarMenu>
+    );
+    const label = screen.getByText('Options');
+    expect(label.className).toContain('@[40rem]/composer-bar:inline');
+    expect(label.className).not.toMatch(/(^|\s)sm:inline/);
+  });
+
+  it('keeps the menu open while toggling options and closes on Escape or outside click', async () => {
     const onToggle = vi.fn();
     render(
       <div>
@@ -34,6 +47,8 @@ describe('ComposerToolbarMenu', () => {
     fireEvent.click(screen.getByTestId('menu'));
     expect(screen.getByTestId('menu')).toHaveAttribute('aria-expanded', 'true');
 
+    // The app's one menu (R6): the ContextMenu, in a portal.
+    expect(screen.getByRole('menu').parentElement).toBe(document.body);
     fireEvent.click(screen.getByTestId('opt'));
     expect(onToggle).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('menu')).toBeInTheDocument();
@@ -43,6 +58,8 @@ describe('ComposerToolbarMenu', () => {
     expect(screen.queryByRole('menu')).toBeNull();
 
     fireEvent.click(screen.getByTestId('menu'));
+    // The menu listens for a press outside from the next tick on.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
     fireEvent.mouseDown(screen.getByTestId('outside'));
     expect(screen.queryByRole('menu')).toBeNull();
   });

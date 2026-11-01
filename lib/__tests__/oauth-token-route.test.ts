@@ -17,6 +17,7 @@ vi.mock('@/lib/logger', () => ({
 
 vi.mock('@/lib/oauth/cookie-config', () => ({
   getCookieOptions: () => ({ httpOnly: true, secure: true, sameSite: 'lax', path: '/', maxAge: 2592000 }),
+  getSignInCookieOptions: (remember: boolean) => ({ httpOnly: true, secure: true, sameSite: 'lax', path: '/', ...(remember ? { maxAge: 2592000 } : {}) }),
 }));
 
 const getTokenEndpoint = vi.fn();
@@ -24,12 +25,14 @@ const buildOAuthParams = vi.fn();
 const getMetadata = vi.fn();
 const getRequiredConfig = vi.fn();
 const exchangeCodeForTokens = vi.fn();
+const defaultClientOptions = vi.fn(async (_serverId?: unknown) => ({ fallbackClientId: 'bulwark-webmail' }));
 vi.mock('@/lib/oauth/token-exchange', () => ({
   exchangeCodeForTokens: (...args: unknown[]) => exchangeCodeForTokens(...args),
   buildOAuthParams: (...args: unknown[]) => buildOAuthParams(...args),
   getMetadata: (...args: unknown[]) => getMetadata(...args),
   getRequiredConfig: (...args: unknown[]) => getRequiredConfig(...args),
   getTokenEndpoint: (...args: unknown[]) => getTokenEndpoint(...args),
+  defaultClientOptions: (serverId: unknown) => defaultClientOptions(serverId),
   DEFAULT_CLIENT_ID: 'bulwark-webmail',
 }));
 
@@ -299,6 +302,29 @@ describe('oauth token route - access token cache (#552)', () => {
     );
   });
 
+  it('refreshes with the client the TOTP login registered on Stalwart 1.0', async () => {
+    // 1.0 knows no client named bulwark-webmail; the login signed in with a
+    // client it registered, and a refresh naming another client is refused.
+    defaultClientOptions.mockResolvedValueOnce({ fallbackClientId: 'swc1.registered' });
+    cookieStore.set('jmap_rt', 'totp-minted-refresh-token');
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ access_token: 'fresh-token', expires_in: 1800, refresh_token: 'rotated' }),
+    });
+
+    const { status } = await callPut({ force: 'true' });
+
+    expect(status).toBe(200);
+    expect(defaultClientOptions).toHaveBeenCalledWith(null);
+    expect(buildOAuthParams).toHaveBeenCalledWith(
+      { grant_type: 'refresh_token', refresh_token: 'totp-minted-refresh-token' },
+      null,
+      { fallbackClientId: 'swc1.registered' },
+    );
+    // 1.0 rotates refresh tokens; the old one is dead once the new one is used.
+    expect(cookieStore.get('jmap_rt')?.value).toBe('rotated');
+  });
+
   it('does not serve a cached token once the refresh token is gone', async () => {
     seedCachedToken('orphan-token', 1500);
 
@@ -553,6 +579,17 @@ describe('oauth token route - sign-out (#905)', () => {
     expect(fetchMock).toHaveBeenCalledWith(KEYCLOAK.revocation_endpoint, expect.objectContaining({ method: 'POST' }));
     for (const name of ['jmap_rt', 'jmap_at', 'jmap_idt']) expect(cookieStore.get(name)).toBeUndefined();
     expect(cookieStore.deletedPaths.get('jmap_idt')).toBe('/api/auth/token');
+  });
+
+  it('keeps the grant at the provider when revocation is turned off (#1388)', async () => {
+    configValues.oauthRevokeOnSignOut = false;
+    seedSlot(0);
+
+    await callRoute('DELETE', { slot: '0' });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    // Signed out all the same: the browser holds no token afterwards.
+    for (const name of ['jmap_rt', 'jmap_at', 'jmap_idt']) expect(cookieStore.get(name)).toBeUndefined();
   });
 
   it('identifies the client alone when no id token was kept', async () => {

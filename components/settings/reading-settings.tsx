@@ -10,6 +10,7 @@ import { ChevronRight } from '@/components/icons';
 import { usePolicyStore } from '@/stores/policy-store';
 import { useContactStore } from '@/stores/contact-store';
 import { useAuthStore } from '@/stores/auth-store';
+import { useNoThirdPartyTraffic } from '@/hooks/use-third-party-mode';
 
 /**
  * The Reading page: the open message. Opening it, how its body is drawn,
@@ -18,6 +19,9 @@ import { useAuthStore } from '@/stores/auth-store';
  * tab. List, delete and swipe rows live on the Message list page.
  */
 export function ReadingSettings() {
+  // No third-party traffic (#903) blocks remote content outright: the
+  // setting shows as the organisation's, set to block.
+  const remoteBlockedByOrg = useNoThirdPartyTraffic();
   const t = useTranslations('settings.email_behavior');
   const tPage = useTranslations('settings.reading_page');
   const [showTrustedModal, setShowTrustedModal] = useState(false);
@@ -31,7 +35,6 @@ export function ReadingSettings() {
     hideInlineImageAttachments,
     attachmentImagePreviewsEnabled,
     messageSpacing,
-    plainTextFont,
     externalContentPolicy,
     emailAlwaysLightMode,
     trustedSenders,
@@ -96,18 +99,17 @@ export function ReadingSettings() {
         </SettingItem>
         )}
 
-        {!isSettingHidden('plainTextFont') && (
-        <SettingItem label={t('plain_text_font.label')} description={t('plain_text_font.description')} locked={isSettingLocked('plainTextFont')}>
-          <Select
-            value={plainTextFont}
-            onChange={(value) => updateSetting('plainTextFont', value as typeof plainTextFont)}
-            options={[
-              { value: 'mono', label: t('plain_text_font.mono') },
-              { value: 'sans', label: t('plain_text_font.sans') },
-            ]}
-          />
+        {/* The plain text font is part of the font settings on Accessibility. */}
+        <SettingItem label={tPage('plain_text_font_link.label')} description={tPage('plain_text_font_link.description')}>
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent('settings-tab-change', { detail: { tab: 'accessibility', section: 'text' } }))}
+            className="flex items-center gap-2 px-3 py-1.5 bg-muted hover:bg-accent rounded-md transition-colors"
+          >
+            <span className="text-sm text-foreground">{tPage('plain_text_font_link.button')}</span>
+            <ChevronRight className="w-4 h-4 text-muted-foreground" />
+          </button>
         </SettingItem>
-        )}
 
         <SettingItem label={t('always_light_mode.label')} description={t('always_light_mode.description')}>
           <ToggleSwitch
@@ -119,9 +121,9 @@ export function ReadingSettings() {
 
       <SettingsSection id="images" title={tPage('sections.images')} description={tPage('sections.images_description')}>
         {isFeatureEnabled('externalContentEnabled') && !isSettingHidden('externalContentPolicy') && (
-        <SettingItem label={t('external_content.label')} description={t('external_content.description')} locked={isSettingLocked('externalContentPolicy')}>
+        <SettingItem label={t('external_content.label')} description={t('external_content.description')} locked={isSettingLocked('externalContentPolicy') || remoteBlockedByOrg}>
           <Select
-            value={externalContentPolicy}
+            value={remoteBlockedByOrg ? 'block' : externalContentPolicy}
             onChange={(value) =>
               updateSetting('externalContentPolicy', value as 'ask' | 'block' | 'allow')
             }

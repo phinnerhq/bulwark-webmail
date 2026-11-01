@@ -12,14 +12,18 @@ import {
   directoryJson,
   getDirectoryChannel,
   getDirectoryUrl,
+  directoryOff,
+  DIRECTORY_OFF_MESSAGE,
   historyFor,
   installedExtensions,
   installedStateOf,
+  readBundleBytes,
   toListing,
   v2Url,
   type DirectoryDetail,
   type DirectoryVersion,
 } from '@/lib/admin/marketplace-directory';
+import { MAX_PLUGIN_SIZE, MAX_THEME_SIZE } from '@/lib/plugin-types';
 
 const MAX_PREVIEW_SOURCE_LEN = 100_000;
 
@@ -36,6 +40,7 @@ function versionRow(v: DirectoryVersion) {
     sha256: v.sha256,
     yanked: v.yanked,
     changelog: v.changelog ?? null,
+    notes: v.notes ?? null,
     downloads: v.downloads ?? 0,
     signed: !!v.signature,
     commit: v.provenance?.source?.commit ?? null,
@@ -63,6 +68,9 @@ export async function GET(
   try {
     const result = await requireAdminAuth(request);
     if ('error' in result) return result.error;
+    if (await directoryOff()) {
+      return NextResponse.json({ error: DIRECTORY_OFF_MESSAGE, code: 'no-third-party-traffic' }, { status: 403 });
+    }
 
     const { slug } = await params;
     const requested = request.nextUrl.searchParams.get('version');
@@ -118,7 +126,7 @@ export async function GET(
         if (!bundleRes.ok) {
           bundleError = `Bundle download failed (${bundleRes.status})`;
         } else {
-          const buffer = await bundleRes.arrayBuffer();
+          const buffer = await readBundleBytes(bundleRes, type === 'theme' ? MAX_THEME_SIZE : MAX_PLUGIN_SIZE);
           bundleSize = buffer.byteLength;
           signature = await checkBundleSignature({
             directoryUrl,

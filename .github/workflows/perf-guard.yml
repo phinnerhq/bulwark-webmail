@@ -21,10 +21,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -41,9 +41,18 @@ jobs:
           DEV_MOCK_JMAP: "true"
           NEXT_TELEMETRY_DISABLED: "1"
           GIT_COMMIT: ${{ github.sha }}
-        run: npx next build --webpack
+        run: node scripts/build-plugin-sandbox.mjs && npx next build --webpack
 
       - name: Run perf guard
         env:
           CI: "true"
         run: npm run test:perf-guard
+
+      # Same build: axe's WCAG 2.2 A/AA checks per main screen against
+      # scripts/a11y-guard/budget.json, plus keyboard checks axe can't make.
+      # Runs even when the perf guard failed, so both results show.
+      - name: Run accessibility guard
+        if: success() || failure()
+        env:
+          CI: "true"
+        run: npm run test:a11y-guard

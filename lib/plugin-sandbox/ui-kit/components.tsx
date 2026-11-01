@@ -15,7 +15,7 @@
 // against.
 
 import * as React from 'react';
-import { cn } from '@/lib/utils';
+import { cn } from '@/lib/cn';
 import { Button as AppButton } from '@/components/ui/button';
 import { Input as AppInput } from '@/components/ui/input';
 import { getFileIconByName, getFolderIcon } from '@/components/files/file-icons';
@@ -28,6 +28,7 @@ import {
   closeFloatingDropdown,
   registerFloatingDropdownListener,
 } from './floating-dropdown-bridge';
+import { kitString } from './kit-strings';
 
 type Children = { children?: React.ReactNode };
 type Tone = 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'primary';
@@ -133,7 +134,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTML
   return (
     <textarea
       ref={ref}
-      className={cn('bk flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground transition-all duration-200 placeholder:text-muted-foreground hover:border-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring disabled:cursor-not-allowed disabled:opacity-50', className)}
+      className={cn('bk flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground transition-all duration-200 placeholder:text-muted-foreground hover:border-muted-foreground focus-visible:outline-hidden focus-visible:border-ring disabled:cursor-not-allowed disabled:opacity-50', className)}
       {...rest}
     />
   );
@@ -152,7 +153,7 @@ export function Select({ options, children, onChange, disabled, block = false, c
   return (
     <select
       className={cn(
-        'bk px-3 py-1.5 text-sm rounded-md bg-muted border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors duration-150',
+        'bk px-3 py-1.5 text-sm rounded-md bg-muted border border-border text-foreground focus:outline-hidden transition-colors duration-150',
         disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:border-muted-foreground',
         block && 'w-full',
         className,
@@ -523,8 +524,8 @@ export function Combobox({
                     e.stopPropagation();
                     toggleMultipleOption(opt);
                   }}
-                  aria-label={`Remove ${opt.label}`}
-                  className="text-muted-foreground hover:text-foreground p-0.5 rounded focus:outline-none"
+                  aria-label={kitString('remove_named', { name: String(opt.label) })}
+                  className="text-muted-foreground hover:text-foreground p-0.5 rounded focus:outline-hidden"
                 >
                   <X className="w-3 h-3" aria-hidden="true" />
                 </button>
@@ -566,7 +567,7 @@ export function Combobox({
           onKeyDown={handleKeyDown}
           className={cn(
             multiple
-              ? 'flex-1 min-w-[80px] bg-transparent border-0 p-0 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-0'
+              ? 'flex-1 min-w-[80px] bg-transparent border-0 p-0 text-sm text-foreground placeholder:text-muted-foreground outline-none'
               : cn(
                   'w-full rounded-md border-0 bg-transparent ps-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground outline-none',
                   clearable && hasValue ? 'pe-14' : 'pe-8',
@@ -583,8 +584,8 @@ export function Combobox({
                 e.stopPropagation();
               }}
               onClick={handleClear}
-              aria-label="Clear"
-              className="p-1 rounded hover:text-foreground focus:outline-none"
+              aria-label={kitString('clear')}
+              className="p-1 rounded hover:text-foreground focus:outline-hidden"
             >
               <X className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
@@ -598,8 +599,8 @@ export function Combobox({
               e.stopPropagation();
             }}
             onClick={handleToggle}
-            aria-label={isOpen ? 'Close' : 'Open'}
-            className="p-1 rounded hover:text-foreground focus:outline-none disabled:opacity-50"
+            aria-label={isOpen ? kitString('close') : kitString('open')}
+            className="p-1 rounded hover:text-foreground focus:outline-hidden disabled:opacity-50"
           >
             {isOpen ? <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" /> : <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />}
           </button>
@@ -613,7 +614,7 @@ export function Combobox({
           role="listbox"
           aria-multiselectable={multiple || undefined}
           aria-label={ariaLabel ?? placeholder}
-          className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-md border border-border bg-popover text-popover-foreground shadow-md p-1 focus:outline-none"
+          className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-md border border-border bg-popover text-popover-foreground shadow-md p-1 focus:outline-hidden"
         >
           {filteredOptions.length === 0 ? (
             <div className="px-2 py-2 text-xs text-muted-foreground text-center">
@@ -678,7 +679,7 @@ export function Checkbox({ checked, onChange, label, hint, disabled = false, id,
       disabled={disabled}
       onClick={() => onChange?.(!checked)}
       className={cn(
-        'bk mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50',
+        'bk mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition-colors focus-visible:outline-hidden disabled:opacity-50',
         checked ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/50 bg-background',
       )}
     >
@@ -709,15 +710,15 @@ export function Switch({ checked, onChange, disabled = false, label, id }: { che
       disabled={disabled}
       onClick={() => onChange?.(!checked)}
       className={cn(
-        'bk relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        checked ? 'bg-primary' : 'bg-muted',
+        'bk relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-150 focus-visible:outline-hidden',
+        checked ? 'bg-primary' : 'bg-muted ring-1 ring-inset ring-muted-foreground',
         disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
       )}
     >
       <span
         className={cn(
-          'inline-block h-4 w-4 transform rounded-full bg-background transition-transform duration-150',
-          checked ? 'ltr:translate-x-6 rtl:-translate-x-6' : 'ltr:translate-x-1 rtl:-translate-x-1',
+          'inline-block h-4 w-4 transform rounded-full transition-transform duration-150',
+          checked ? 'bg-background ltr:translate-x-6 rtl:-translate-x-6' : 'bg-muted-foreground ltr:translate-x-1 rtl:-translate-x-1',
         )}
       />
     </button>
@@ -736,7 +737,7 @@ export function Segmented({ value, options, onChange, label }: { value: string; 
           aria-checked={o.value === value}
           onClick={() => onChange?.(o.value)}
           className={cn(
-            'px-3 py-1.5 text-xs rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            'px-3 py-1.5 text-xs rounded-md transition-colors duration-150 focus-visible:outline-hidden',
             o.value === value ? 'bg-primary text-primary-foreground font-medium' : 'bg-muted hover:bg-accent text-foreground',
           )}
         >
@@ -753,17 +754,30 @@ export function Segmented({ value, options, onChange, label }: { value: string; 
  */
 export function Field({ label, hint, error, required = false, children }: { label: React.ReactNode; hint?: React.ReactNode; error?: React.ReactNode; required?: boolean } & Children) {
   const autoId = React.useId();
-  const only = React.Children.count(children) === 1 && React.isValidElement(children) ? children as React.ReactElement<{ id?: string }> : null;
+  type ControlProps = { id?: string; 'aria-describedby'?: string; 'aria-invalid'?: boolean; 'aria-required'?: boolean };
+  const only = React.Children.count(children) === 1 && React.isValidElement(children) ? children as React.ReactElement<ControlProps> : null;
   const controlId = only?.props.id ?? autoId;
+  // The hint or error is read with the field, an error marks it invalid,
+  // and the asterisk is said as "required".
+  const noteId = `${autoId}-note`;
+  const note = error || hint;
+  const control = only
+    ? React.cloneElement(only, {
+        id: controlId,
+        'aria-describedby': [only.props['aria-describedby'], note ? noteId : null].filter(Boolean).join(' ') || undefined,
+        ...(error ? { 'aria-invalid': true } : {}),
+        ...(required ? { 'aria-required': true } : {}),
+      })
+    : children;
   return (
     <div className="bk">
       <label htmlFor={only ? controlId : undefined} className="text-sm font-medium mb-1 block text-foreground">
         {label}
-        {required && <span className="text-destructive"> *</span>}
+        {required && <span className="text-destructive" aria-hidden="true"> *</span>}
       </label>
-      {only && !only.props.id ? React.cloneElement(only, { id: controlId }) : children}
-      {hint && !error && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
-      {error && <p className="text-sm text-destructive mt-1" role="alert">{error}</p>}
+      {control}
+      {hint && !error && <p id={noteId} className="text-xs text-muted-foreground mt-1">{hint}</p>}
+      {error && <p id={noteId} className="text-sm text-destructive mt-1" role="alert">{error}</p>}
     </div>
   );
 }
@@ -779,10 +793,10 @@ export function SearchInput({ value, onChange, placeholder, label, className }: 
         placeholder={placeholder}
         aria-label={label ?? placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full h-8 rounded-md border border-input bg-background ps-8 pe-8 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-search-cancel-button]:hidden"
+        className="w-full h-8 rounded-md border border-input bg-background ps-8 pe-8 text-sm outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
       />
       {value && (
-        <button type="button" onClick={() => onChange('')} aria-label="×" className="absolute end-1.5 top-1/2 -translate-y-1/2 p-1 rounded text-muted-foreground hover:text-foreground">
+        <button type="button" onClick={() => onChange('')} aria-label={kitString('clear_search')} className="absolute end-1.5 top-1/2 -translate-y-1/2 p-1 rounded text-muted-foreground hover:text-foreground">
           <X className="w-3.5 h-3.5" aria-hidden="true" />
         </button>
       )}
@@ -931,7 +945,7 @@ export function Tabs({ value, tabs, onChange, label }: { value: string; tabs: { 
             aria-selected={active}
             onClick={() => onChange(tab.id)}
             className={cn(
-              'flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+              'flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors focus-visible:outline-hidden focus-inset',
               active ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground',
             )}
           >
@@ -1067,7 +1081,7 @@ export function ListRow({ title, subtitle, meta, icon, folder = false, selected 
       onDoubleClick={disabled ? undefined : onDoubleClick}
       onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(); } } : undefined}
       className={cn(
-        'bk group flex items-center gap-x-3 px-4 border-b border-border/60 select-none transition-colors outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring/60',
+        'bk group flex items-center gap-x-3 px-4 border-b border-border/60 select-none transition-colors outline-none focus-inset',
         subtitle ? 'min-h-[52px] py-1.5' : 'h-10',
         selected ? 'bg-primary/10' : clickable && 'hover:bg-muted/60',
         clickable ? 'cursor-pointer' : 'cursor-default',
@@ -1102,7 +1116,7 @@ export function RowAction({ icon, label, onClick, danger = false }: { icon: stri
       onClick={onClick}
       title={label}
       aria-label={label}
-      className={cn('bk p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', danger && 'hover:text-destructive')}
+      className={cn('bk p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-all focus-visible:outline-hidden', danger && 'hover:text-destructive')}
     >
       <Icon name={icon} />
     </button>
@@ -1122,7 +1136,7 @@ const BADGE_TONE: Record<Tone, string> = {
 
 /** The status pills (calendar invitation, identity "Default"). */
 export function Badge({ tone = 'neutral', children }: { tone?: Tone } & Children) {
-  return <span className={cn('bk inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap', BADGE_TONE[tone])}>{children}</span>;
+  return <span className={cn('bk inline-flex items-center rounded-full px-2 py-0.5 text-[0.6875rem] font-medium whitespace-nowrap', BADGE_TONE[tone])}>{children}</span>;
 }
 
 /** The reader's attachment chip: icon, label, muted detail. Clickable when onClick is set. */
@@ -1138,13 +1152,13 @@ export function Chip({ icon, label, detail, onClick, onRemove, removeLabel, titl
   );
   const box = 'bk inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-muted/60 rounded-md border border-border/50 flex-shrink-0 max-w-full';
   if (onClick && !onRemove) {
-    return <button type="button" title={title} onClick={onClick} className={cn(box, 'hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring')}>{body}</button>;
+    return <button type="button" title={title} onClick={onClick} className={cn(box, 'hover:bg-muted transition-colors focus-visible:outline-hidden')}>{body}</button>;
   }
   return (
     <span className={box} title={title}>
       {body}
       {onRemove && (
-        <button type="button" onClick={onRemove} aria-label={removeLabel ?? '×'} className="p-0.5 -me-1 rounded hover:bg-accent transition-colors">
+        <button type="button" onClick={onRemove} aria-label={removeLabel ?? (typeof label === 'string' ? kitString('remove_named', { name: label }) : kitString('remove'))} className="p-0.5 -me-1 rounded hover:bg-accent transition-colors">
           <X className="w-3.5 h-3.5" aria-hidden="true" />
         </button>
       )}
@@ -1173,7 +1187,7 @@ export function InfoBar({ tone = 'neutral', icon, eyebrow, title, children, comp
     return (
       <div className="bk flex flex-wrap items-center gap-x-3 gap-y-1.5 px-6 py-1.5 border-b border-border bg-muted/30 text-sm">
         {icon && <span className={cn('w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0', INFO_TONE[tone])}><Icon name={icon} size="sm" /></span>}
-        {eyebrow && <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{eyebrow}</span>}
+        {eyebrow && <span className="text-[0.6875rem] font-semibold text-muted-foreground">{eyebrow}</span>}
         {title && <span className="min-w-0 flex-1 text-foreground break-words">{title}</span>}
         {children}
       </div>
@@ -1191,7 +1205,7 @@ export function InfoBar({ tone = 'neutral', icon, eyebrow, title, children, comp
           <div className="flex-1 min-w-0 space-y-2">
             {(eyebrow || title) && (
               <div>
-                {eyebrow && <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{eyebrow}</div>}
+                {eyebrow && <div className="text-[0.6875rem] font-semibold text-muted-foreground">{eyebrow}</div>}
                 {title && <div className="text-sm font-medium text-foreground break-words">{title}</div>}
               </div>
             )}
@@ -1212,7 +1226,7 @@ export function BarButton({ icon, children, onClick, active = false, busy = fals
       disabled={disabled || busy}
       aria-pressed={active || undefined}
       className={cn(
-        'bk inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border transition-colors min-h-[36px] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        'bk inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border transition-colors min-h-[36px] disabled:opacity-50 focus-visible:outline-hidden',
         active ? 'bg-primary/10 text-primary border-primary/30 font-medium' : 'text-muted-foreground hover:text-foreground border-border hover:bg-muted',
       )}
     >
@@ -1279,7 +1293,7 @@ export function SidebarRow({ icon, label, detail, onClick, title, ariaLabel }: {
       {...(onClick ? { type: 'button' as const, onClick } : {})}
       title={title}
       aria-label={ariaLabel}
-      className={cn('bk w-full flex items-center gap-2 ps-[28px] pe-3 text-sm text-foreground text-start border-s-2 border-transparent transition-colors duration-150', onClick && 'hover:bg-muted/50 focus-visible:outline-none focus-visible:bg-muted/50')}
+      className={cn('bk w-full flex items-center gap-2 ps-[28px] pe-3 text-sm text-foreground text-start border-s-2 border-transparent transition-colors duration-150', onClick && 'hover:bg-muted/50 focus-visible:outline-hidden focus-visible:bg-muted/50')}
       // Folder rows are 44px tall on phones (max-lg); the frame's own
       // viewport can't tell, so the page passes the height in.
       style={{ paddingBlock: 'var(--density-sidebar-py)', minHeight: 'var(--touch-row-min-h, 0px)' }}
@@ -1332,7 +1346,7 @@ export function Panel({ children }: Children) {
 
 /** The small caps heading of the message details' sections. */
 export function DetailHeading({ children }: Children) {
-  return <div className="bk text-[10px] font-semibold tracking-wider text-muted-foreground uppercase mb-1.5">{children}</div>;
+  return <div className="bk text-[0.6875rem] font-semibold text-muted-foreground mb-1.5">{children}</div>;
 }
 
 /** Label and value rows like the message details (From, Date, Size...). Children are DetailRows. */
@@ -1346,6 +1360,81 @@ export function DetailRow({ label, children, mono = false }: { label: React.Reac
       <dt className="text-muted-foreground text-xs pt-1">{label}</dt>
       <dd className={cn('text-sm text-foreground min-w-0 break-words', mono && 'font-mono text-xs')}>{children}</dd>
     </>
+  );
+}
+
+export interface KitTableColumn {
+  /** The key of the cell in each row. */
+  key: string;
+  label: React.ReactNode;
+  /** `end` for amounts and numbers: right-aligned (left in RTL), in tabular figures. */
+  align?: 'start' | 'end';
+  /** Hidden when the frame is narrower than 640 px (a phone). */
+  hideNarrow?: boolean;
+  /** A fixed width such as `6rem`; the other columns share the rest. */
+  width?: string;
+}
+
+export interface KitTableSummaryRow {
+  label: React.ReactNode;
+  value: React.ReactNode;
+  /** The line that matters most, such as the amount due. */
+  strong?: boolean;
+}
+
+/**
+ * A table of data: a header row, one row per entry, and summary rows under
+ * it whose label lines up with the last column (totals of an invoice).
+ * Rows are objects keyed by column key; `key` names the row for React.
+ * Wider than the frame, it scrolls sideways.
+ */
+export function Table({ columns, rows, summary, label, empty }: {
+  columns: KitTableColumn[];
+  rows: (Record<string, React.ReactNode> & { key?: string | number })[];
+  summary?: KitTableSummaryRow[];
+  /** The table's name for screen readers. */
+  label?: string;
+  /** Shown in place of the rows when there are none. */
+  empty?: React.ReactNode;
+}) {
+  const cell = (c: KitTableColumn) => cn(
+    'px-3 align-top',
+    c.align === 'end' ? 'text-end tabular-nums whitespace-nowrap' : 'text-start',
+    c.hideNarrow && 'hidden sm:table-cell',
+  );
+  const visibleSpan = columns.length - 1;
+  return (
+    <div className="bk overflow-x-auto">
+      <table className="w-full border-collapse text-sm" aria-label={label}>
+        <thead>
+          <tr className="border-b border-border text-xs font-medium text-muted-foreground">
+            {columns.map((c) => (
+              <th key={c.key} scope="col" className={cn(cell(c), 'py-2 font-medium')} style={c.width ? { width: c.width } : undefined}>{c.label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 && empty !== undefined ? (
+            <tr><td colSpan={columns.length} className="px-3 py-3 text-muted-foreground">{empty}</td></tr>
+          ) : rows.map((row, i) => (
+            <tr key={row.key ?? i} className="border-b border-border/60">
+              {columns.map((c) => <td key={c.key} className={cn(cell(c), 'py-2 text-foreground break-words')}>{row[c.key]}</td>)}
+            </tr>
+          ))}
+        </tbody>
+        {summary && summary.length > 0 && (
+          <tfoot>
+            {summary.map((s, i) => (
+              <tr key={i} className={cn(s.strong && 'border-t border-border')}>
+                {/* On phones the hideNarrow columns are gone; the label still spans what is left. */}
+                <th scope="row" colSpan={visibleSpan} className={cn('px-3 text-end font-normal', s.strong ? 'py-2 font-semibold text-foreground' : 'py-1 text-muted-foreground')}>{s.label}</th>
+                <td className={cn('px-3 text-end tabular-nums whitespace-nowrap', s.strong ? 'py-2 font-semibold text-foreground' : 'py-1 text-foreground')}>{s.value}</td>
+              </tr>
+            ))}
+          </tfoot>
+        )}
+      </table>
+    </div>
   );
 }
 

@@ -1,19 +1,23 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { generateUUID } from "@/lib/utils";
+import { useState, useEffect, useMemo } from "react";
 import { useTranslations } from "next-intl";
-import { X, Download, Loader2, ExternalLink } from "@/components/icons";
-import { Button } from "@/components/ui/button";
+import { ExternalLink } from "@/components/icons";
+import { Spinner } from "@/components/ui/spinner";
+import { PreviewShell, type PreviewNeighbours } from "@/components/files/preview-shell";
+import { IconButton } from "@/components/ui/icon-button";
 import { ZoomableImage } from "@/components/files/zoomable-image";
 import { getFilePreviewKind, imageBlobUrl, isMimeTypeSafeForInlinePreview, previewBlobType } from "@/lib/file-preview";
 import dynamic from "next/dynamic";
-import { EmlPreview, type ParsedEml } from "@/components/files/eml-preview";
+import { EmlPreview, type EmlAttachment, type ParsedEml } from "@/components/files/eml-preview";
 import { FilePreviewPluginSection } from "@/components/files/file-preview-plugin-section";
 import { canOpenUrlInNewWindow } from "@/lib/standalone-display";
+import { stripBidiControls } from "@/lib/bidi";
 import { emailIframeCsp, sanitizeEmailBodyForIframe } from "@/lib/email-sanitization";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useCloseOnBack } from "@/hooks/use-close-on-back";
 import type { FileResourceView } from "@/lib/plugin-types";
+import { useNoThirdPartyTraffic } from "@/hooks/use-third-party-mode";
 
 /**
  * An HTML attachment as a document for a fully locked frame (sandbox="",
@@ -45,6 +49,8 @@ interface FilePreviewModalProps {
   getFileContent: () => Promise<{ blob: Blob; contentType: string }>;
   /** The previewed file as plugins see it (file-preview-section). */
   file?: FileResourceView | null;
+  /** The previous and next file of the folder, for ←/→. */
+  neighbours?: PreviewNeighbours;
 }
 
 function SimpleMarkdown({ content }: { content: string }) {
@@ -138,11 +144,7 @@ function processInline(text: string): React.ReactNode {
   return parts.length === 1 ? parts[0] : <>{parts}</>;
 }
 
-// Closing one preview can leave an asynchronous Back traversal in flight.
-// A replacement must not install its popstate listener until that completes.
-let pendingPreviewHistoryBack: Promise<void> | null = null;
-
-export function FilePreviewModal({ name, onClose, onDownload, getFileContent, file }: FilePreviewModalProps) {
+export function FilePreviewModal({ name, onClose, onDownload, getFileContent, file, neighbours }: FilePreviewModalProps) {
   const t = useTranslations("files");
   const [content, setContent] = useState<string | null>(null);
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
@@ -161,7 +163,13 @@ export function FilePreviewModal({ name, onClose, onDownload, getFileContent, fi
   // open-in-new-tab fallback use.
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [htmlDoc, setHtmlDoc] = useState<string | null>(null);
-  const blockRemote = useSettingsStore((state) => state.externalContentPolicy) !== "allow";
+  // Always blocked with no third-party traffic (#903).
+  const remoteBlockedByOrg = useNoThirdPartyTraffic();
+  const blockRemote = useSettingsStore((state) => state.externalContentPolicy) !== "allow" || remoteBlockedByOrg;
+  // An attachment of the previewed .eml, shown in a preview of its own in
+  // place of this one. It holds a Back entry of its own, so Escape and Back
+  // close it first and come back here.
+  const [nestedPreview, setNestedPreview] = useState<{ name: string; blob: Blob } | null>(null);
 
   // Decide whether to render the PDF in a plain <iframe> (desktop) or with the
   // pdf.js canvas viewer (mobile). navigator.pdfViewerEnabled is the standard
@@ -182,43 +190,8 @@ export function FilePreviewModal({ name, onClose, onDownload, getFileContent, fi
     }
   }, []);
 
-  // Keep the latest onClose for the back-button handler without re-subscribing.
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-
-  // Defer history setup so Strict Mode's setup/cleanup/setup replay can
-  // cancel the first setup without scheduling a browser Back traversal.
-  useEffect(() => {
-    const entryId = generateUUID();
-    let cancelled = false;
-    let started = false;
-    let poppedByBack = false;
-    const onPop = () => {
-      poppedByBack = true;
-      onCloseRef.current();
-    };
-    const timer = window.setTimeout(async () => {
-      if (pendingPreviewHistoryBack) await pendingPreviewHistoryBack;
-      if (cancelled) return;
-      window.history.pushState({ ...window.history.state, __filePreview: entryId }, "");
-      started = true;
-      window.addEventListener("popstate", onPop);
-    }, 0);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-      window.removeEventListener("popstate", onPop);
-      if (started && !poppedByBack && window.history.state?.__filePreview === entryId) {
-        pendingPreviewHistoryBack = new Promise<void>(resolve => {
-          window.addEventListener("popstate", () => {
-            pendingPreviewHistoryBack = null;
-            resolve();
-          }, { once: true });
-        });
-        window.history.back();
-      }
-    };
-  }, []);
+  // Back closes the preview instead of leaving Files.
+  useCloseOnBack({ onBack: onClose });
 
   const fileType = resolvedFileType;
 
@@ -298,57 +271,63 @@ export function FilePreviewModal({ name, onClose, onDownload, getFileContent, fi
     };
   }, [getFileContent, name, blockRemote]);
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown, { capture: true });
-    return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
-  }, [onClose]);
+  const openEmlAttachment = (att: EmlAttachment) => {
+    if (!att.content) return;
+    setNestedPreview({
+      name: att.filename ? stripBidiControls(att.filename) : "attachment",
+      // content is a real ArrayBuffer/Uint8Array at runtime; cast for the
+      // strict BlobPart lib type, as EmlPreview's download does.
+      blob: new Blob([att.content as BlobPart], { type: att.mimeType || "application/octet-stream" }),
+    });
+  };
+  // Stable per attachment: the loader effect re-runs when it changes.
+  const nestedContent = useMemo(
+    () => nestedPreview
+      ? async () => ({ blob: nestedPreview.blob, contentType: nestedPreview.blob.type })
+      : null,
+    [nestedPreview],
+  );
+  const downloadNested = () => {
+    if (!nestedPreview) return;
+    const url = URL.createObjectURL(nestedPreview.blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = nestedPreview.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // In place of this frame, not on top of it: one frame at a time takes
+  // Escape and the arrows. This one keeps its state and its Back entry.
+  if (nestedPreview && nestedContent) {
+    return (
+      <FilePreviewModal
+        name={nestedPreview.name}
+        onClose={() => setNestedPreview(null)}
+        onDownload={downloadNested}
+        getFileContent={nestedContent}
+      />
+    );
+  }
 
   return (
-    <div role="dialog" aria-label={name} className="fixed inset-0 z-50 flex flex-col bg-black/80" onClick={onClose}>
-      {/* The dialog is `fixed inset-0` under `viewport-fit=cover`, so in an
-          installed iOS PWA (no browser chrome above it) the header would sit
-          underneath the status bar and its buttons - including the close
-          button - became unreachable (#936). Pad the bar itself so its
-          background still bleeds behind the status bar / notch. The insets are
-          physical, so pl/pr (not ps/pe) is correct in RTL too. */}
-      <div className="flex items-center justify-between gap-2 pl-[calc(1rem+env(safe-area-inset-left))] pr-[calc(1rem+env(safe-area-inset-right))] pt-[calc(0.75rem+env(safe-area-inset-top))] pb-3 bg-background/90 backdrop-blur border-b border-border" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-sm font-medium truncate">{name}</h3>
-        <div className="flex items-center gap-2">
-          {/* An installed app hands the new window to the system browser,
-              which cannot load our blob: URL (#865): no dead button there. */}
-          {objectUrl && canOpenInNewTab && canOpenUrlInNewWindow(objectUrl) && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              title={t("open_in_new_tab")}
-              aria-label={t("open_in_new_tab")}
-              onClick={() => window.open(objectUrl, "_blank", "noopener,noreferrer")}
-            >
-              <ExternalLink className="w-4 h-4" />
-            </Button>
-          )}
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => void onDownload()}>
-            <Download className="w-4 h-4" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}>
-            <X className="w-4 h-4" />
-          </Button>
-        </div>
-      </div>
-
+    <PreviewShell
+      name={name}
+      onClose={onClose}
+      onDownload={() => void onDownload()}
+      neighbours={neighbours}
+      // An installed app hands the new window to the system browser, which
+      // cannot load our blob: URL (#865): no dead button there.
+      actions={objectUrl && canOpenInNewTab && canOpenUrlInNewWindow(objectUrl) ? (
+        <IconButton label={t("open_in_new_tab")} onClick={() => window.open(objectUrl, "_blank", "noopener,noreferrer")}>
+          <ExternalLink />
+        </IconButton>
+      ) : undefined}
+    >
       <div className="relative flex-1 min-h-0 flex items-center justify-center overflow-auto p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pl-[calc(1rem+env(safe-area-inset-left))] pr-[calc(1rem+env(safe-area-inset-right))]">
-        {loading && (
-          <div className="flex flex-col items-center gap-2 text-muted-foreground">
-            <Loader2 className="w-8 h-8 animate-spin" />
-          </div>
-        )}
+        {loading && <Spinner label={t("loading")} className="w-8 h-8 text-white/80" />}
 
         {error && (
           <p className="text-sm text-destructive">{t("preview_error")}</p>
@@ -373,7 +352,7 @@ export function FilePreviewModal({ name, onClose, onDownload, getFileContent, fi
         )}
 
         {!loading && !error && fileType === "eml" && emlContent && (
-          <EmlPreview message={emlContent} />
+          <EmlPreview message={emlContent} onOpenAttachment={openEmlAttachment} />
         )}
 
         {!loading && !error && fileType === "image" && objectUrl && (
@@ -434,6 +413,6 @@ export function FilePreviewModal({ name, onClose, onDownload, getFileContent, fi
         )}
       </div>
       <FilePreviewPluginSection file={file} />
-    </div>
+    </PreviewShell>
   );
 }

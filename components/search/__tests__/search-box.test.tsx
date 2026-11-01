@@ -264,3 +264,38 @@ describe('SearchBox draft', () => {
     expect(input().value).toBe('from:alice');
   });
 });
+
+// At 1440 the list column cut "Search mail... (press /)" to "Search mail...
+// (pres". The placeholder is short now; the "/" shortcut shows as a key cap
+// at the end of the empty field and is named for assistive tech.
+describe('SearchBox shortcut hint', () => {
+  it('keeps the placeholder short and shows the / key apart', () => {
+    const { container } = render(<Harness />);
+    expect(input().getAttribute('placeholder')).toBe('search_placeholder');
+    expect(input().getAttribute('aria-keyshortcuts')).toBe('/');
+    const kbd = container.querySelector('kbd');
+    expect(kbd?.textContent).toBe('/');
+    expect(kbd?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('drops the key cap once something is typed', () => {
+    const { container } = render(<Harness initial="invoice" />);
+    expect(container.querySelector('kbd')).toBeNull();
+  });
+});
+
+describe('SearchBox end controls', () => {
+  it('keeps the clear button inside the field, where the wrapper places it', () => {
+    render(<SearchBox value="test" onChange={() => {}} onSubmit={() => {}} onClear={() => {}} onSelectContact={() => {}} />);
+    const clear = screen.getByTestId('search-clear');
+    // The touch hit area's `relative` once overrode the button's `absolute`,
+    // dropping it under the input and stretching the field.
+    expect(clear.className.split(/\s+/)).not.toContain('absolute');
+    expect(clear.closest('.absolute')?.closest('form')).toBeTruthy();
+  });
+
+  it('shows the trailing control next to the clear button', () => {
+    render(<SearchBox value="test" onChange={() => {}} onSubmit={() => {}} onClear={() => {}} onSelectContact={() => {}} trailing={<button>filters</button>} />);
+    expect(screen.getByText('filters').parentElement).toBe(screen.getByTestId('search-clear').parentElement);
+  });
+});

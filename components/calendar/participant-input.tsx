@@ -18,6 +18,8 @@ interface ParticipantInputProps {
   onAdd: (participant: Participant) => void;
   onRemove: (email: string) => void;
   disabled?: boolean;
+  /** The field's id, for the label above it. */
+  id?: string;
 }
 
 export interface ParticipantInputHandle {
@@ -26,7 +28,7 @@ export interface ParticipantInputHandle {
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export const ParticipantInput = forwardRef<ParticipantInputHandle, ParticipantInputProps>(function ParticipantInput({ participants, onAdd, onRemove, disabled }, ref) {
+export const ParticipantInput = forwardRef<ParticipantInputHandle, ParticipantInputProps>(function ParticipantInput({ participants, onAdd, onRemove, disabled, id }, ref) {
   const t = useTranslations("calendar.participants");
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<Participant[]>([]);
@@ -143,6 +145,7 @@ export const ParticipantInput = forwardRef<ParticipantInputHandle, ParticipantIn
             otherwise offered logins for the e-mail placeholder. */}
         <Input
           ref={inputRef}
+          id={id}
           type="search"
           autoComplete="off"
           enterKeyHint="enter"
@@ -180,11 +183,11 @@ export const ParticipantInput = forwardRef<ParticipantInputHandle, ParticipantIn
                   i === activeIndex ? "bg-accent text-accent-foreground" : "hover:bg-muted"
                 }`}
               >
-                <Avatar name={s.name} email={s.email} size="sm" className="shrink-0 w-7 h-7 text-[10px]" />
+                <Avatar name={s.name} email={s.email} size="sm" className="shrink-0 w-7 h-7 text-[0.625rem]" />
                 <div className="min-w-0">
-                  <div className="font-medium truncate">{s.name || s.email}</div>
+                  <div className="font-medium truncate" title={s.name || s.email}>{s.name || s.email}</div>
                   {s.name && (
-                    <div className="text-xs text-muted-foreground truncate">{s.email}</div>
+                    <div className="text-xs text-muted-foreground truncate" title={s.email}>{s.email}</div>
                   )}
                 </div>
               </li>
@@ -211,17 +214,18 @@ export const ParticipantInput = forwardRef<ParticipantInputHandle, ParticipantIn
                   }}
                   className="truncate hover:underline focus:outline-none focus:underline cursor-text"
                   aria-label={`${t("edit")} ${p.name || p.email}`}
+                  title={p.email}
                 >
                   {p.name || p.email}
                 </button>
               ) : (
-                <span className="truncate">{p.name || p.email}</span>
+                <span className="truncate" title={p.email}>{p.name || p.email}</span>
               )}
               {!disabled && (
                 <button
                   type="button"
                   onClick={() => onRemove(p.email)}
-                  className="flex-shrink-0 p-0.5 rounded-full hover:bg-muted-foreground/20 transition-colors min-w-[20px] min-h-[20px] flex items-center justify-center"
+                  className="flex-shrink-0 p-0.5 rounded-full hover:bg-muted-foreground/20 transition-colors min-w-6 min-h-6 -m-0.5 flex items-center justify-center"
                   aria-label={`${t("remove")} ${p.name || p.email}`}
                 >
                   <X className="w-3 h-3" />

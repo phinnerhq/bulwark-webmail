@@ -11,8 +11,9 @@ import { useArchiveActionEnabled, withoutArchiveIfOff } from "@/lib/archive-gate
 import { useTranslations } from "next-intl";
 import { useIsMobile } from "@/hooks/use-media-query";
 import { TagPicker } from "@/components/email/tag-picker";
+import { useEmailTagScope } from "@/hooks/use-account-tags";
 import { getEmailTagIds } from "@/lib/thread-utils";
-import { PluginActions, usePluginActions } from "@/components/plugins/plugin-actions";
+import { PluginActions, useMessageActionTarget, usePluginActions } from "@/components/plugins/plugin-actions";
 
 interface EmailHoverActionsProps {
   email: Email;
@@ -31,6 +32,11 @@ interface EmailHoverActionsProps {
   spamApplicable?: boolean;
   /** Role of the folder the row is listed in; plugin buttons can be limited to some. */
   mailboxRole?: string | null;
+  /**
+   * Keep the actions on the row's first 40px line rather than centred on the
+   * whole row, as Gmail does when attachment chips make the row taller.
+   */
+  pinToFirstLine?: boolean;
 }
 
 const ACTION_CONFIG: Record<HoverAction, {
@@ -41,32 +47,32 @@ const ACTION_CONFIG: Record<HoverAction, {
   delete: {
     icon: Trash2,
     titleKey: "delete",
-    className: "hover:text-red-600 dark:hover:text-red-400",
+    className: "hover:text-destructive",
   },
   star: {
     icon: Star,
     titleKey: "star",
-    className: "hover:text-amber-500 dark:hover:text-amber-400",
+    className: "hover:text-foreground",
   },
   markRead: {
     icon: Mail,
     titleKey: "mark_read",
-    className: "hover:text-blue-600 dark:hover:text-blue-400",
+    className: "hover:text-foreground",
   },
   archive: {
     icon: Archive,
     titleKey: "archive",
-    className: "hover:text-green-600 dark:hover:text-green-400",
+    className: "hover:text-foreground",
   },
   tag: {
     icon: Tag,
     titleKey: "tag",
-    className: "hover:text-purple-600 dark:hover:text-purple-400",
+    className: "hover:text-foreground",
   },
   spam: {
     icon: ShieldAlert,
     titleKey: "spam",
-    className: "hover:text-orange-600 dark:hover:text-orange-400",
+    className: "hover:text-foreground",
   },
 };
 
@@ -110,7 +116,9 @@ export function EmailHoverActions({
   onUndoSpam,
   spamApplicable = true,
   mailboxRole = null,
+  pinToFirstLine = false,
 }: EmailHoverActionsProps) {
+  const tagScope = useEmailTagScope(email);
   const configuredHoverActions = useSettingsStore((state) => state.hoverActions);
   const mountainView = useSettingsStore((state) => state.interfaceLayout === 'mountain-view');
   const archiveActionEnabled = useArchiveActionEnabled();
@@ -120,10 +128,14 @@ export function EmailHoverActions({
   );
   const hoverActionsMode = useSettingsStore((state) => state.hoverActionsMode);
   const hoverActionsCorner = useSettingsStore((state) => state.hoverActionsCorner);
-  const t = useTranslations("settings.email_behavior.hover_actions");
+  // The words the row's menu uses for the same actions (R10).
+  const t = useTranslations("context_menu");
   const isMobile = useIsMobile();
   // Buttons plugins add to the row (message-row-actions), after the app's own.
-  const pluginActionCount = usePluginActions("message-row-actions", { mailboxRole }).length;
+  const pluginTarget = useMessageActionTarget(email);
+  const pluginActionCount = usePluginActions("message-row-actions", {
+    mailboxRole, accountKind: pluginTarget.accountKind, keywords: pluginTarget.keywords,
+  }).length;
   const pluginContext = useMemo(() => ({ emailId: email.id }), [email.id]);
 
   // The tag quick-action opens the same picker the context menu and the reading
@@ -233,9 +245,13 @@ export function EmailHoverActions({
         : isNotSpam
           ? ShieldCheck
           : Icon;
-    const title = isNotSpam ? t("not_spam") : t(config.titleKey);
+    const title = isNotSpam ? t("not_spam")
+      : actionId === "markRead" ? t(isUnread ? "mark_read" : "mark_unread")
+      : actionId === "star" ? t(isStarred ? "unstar" : "star")
+      : actionId === "spam" ? t("mark_as_spam")
+      : t(config.titleKey);
     const className = isNotSpam
-      ? "hover:text-green-600 dark:hover:text-green-400"
+      ? "hover:text-foreground"
       : config.className;
 
     return (
@@ -246,6 +262,7 @@ export function EmailHoverActions({
         onClick={(e) => handleAction(e, actionId)}
         onDoubleClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
         title={title}
+        aria-label={title}
         aria-haspopup={actionId === "tag" ? "menu" : undefined}
         aria-expanded={actionId === "tag" ? tagPickerPos !== null : undefined}
         className={cn(
@@ -269,6 +286,7 @@ export function EmailHoverActions({
         key="plugin-actions"
         surface="message-row-actions"
         context={pluginContext}
+        target={pluginTarget}
         mailboxRole={mailboxRole}
         compact
         className="flex-nowrap gap-0.5"
@@ -290,6 +308,7 @@ export function EmailHoverActions({
           >
             <TagPicker
               selectedIds={currentTagIds}
+              scope={tagScope}
               onToggle={(tagId) => onSetTag(tagId)}
             />
           </div>,
@@ -299,7 +318,10 @@ export function EmailHoverActions({
 
   // While the picker is open the row is no longer hovered, so the toolbar has to
   // stay mounted and visible or the picker would close under its own anchor.
-  const visibilityClass = tagPickerPos ? "flex" : "hidden group-hover:flex";
+  // Shown on keyboard focus too (R7), not only on hover. Only a control inside
+  // the row counts, and only from the keyboard: a click focuses the row itself
+  // (or the button clicked), and focus-within kept the toolbar on the open row.
+  const visibilityClass = tagPickerPos ? "flex" : "hidden group-hover:flex group-has-[:focus-visible]:flex";
 
   if (hoverActionsMode === 'floating') {
     return (
@@ -323,7 +345,7 @@ export function EmailHoverActions({
 
   return (
     <div
-      className={cn("absolute end-0 top-0 bottom-0 z-10 items-center", visibilityClass)}
+      className={cn("absolute end-0 top-0 z-10 items-center", pinToFirstLine ? "h-10" : "bottom-0", visibilityClass)}
     >
       <div
         className={cn(

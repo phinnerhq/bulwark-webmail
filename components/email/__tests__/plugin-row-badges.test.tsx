@@ -89,6 +89,22 @@ describe('plugin badges in message-list rows', () => {
     expect(ctx.email).not.toHaveProperty('mailboxIds.inbox');
   });
 
+  it('draws a badge\'s icon before its label, and none for a name that isn\'t one', async () => {
+    renderHooks.onEmailListItemRender.register('test', async () => [
+      { key: 'done', label: 'Done', icon: 'check' },
+      { key: 'bad', label: 'Bad', icon: 'x"><script>' },
+    ]);
+
+    const { container } = render(row([makeEmail()]));
+
+    await screen.findByText('Done');
+    const done = container.querySelector('[data-plugin-row-badge="done"]')!;
+    expect(done.querySelector('svg[data-badge-icon="check"]')).not.toBeNull();
+    expect(done).toHaveTextContent('Done');
+    expect(container.querySelector('[data-plugin-row-badge="bad"] svg')).toBeNull();
+    expect(normalizeBadges([{ key: 'bad', label: 'Bad', icon: 'x"><script>' }])[0]).not.toHaveProperty('icon');
+  });
+
   it('asks the plugin again when it requests a refresh, at most once a second', async () => {
     let label = 'Open';
     const handler = vi.fn(async () => [{ key: 'task', label }]);
@@ -151,6 +167,17 @@ describe('plugin badges in message-list rows', () => {
     expect(transform).not.toHaveBeenCalled();
     expect(screen.queryByTestId('plugin-row-badges')).toBeNull();
     transform.mockRestore();
+  });
+
+  it('asks rows drawn before the plugin started once its handler arrives, and drops the badge when it goes', async () => {
+    render(row([makeEmail()]));
+    await act(async () => {});
+    expect(screen.queryByTestId('plugin-row-badges')).toBeNull();
+    let off: { dispose: () => void } = { dispose: () => {} };
+    act(() => { off = renderHooks.onEmailListItemRender.register('e-invoice', () => [{ key: 'e', label: 'E-invoice' }]); });
+    expect(await screen.findByText('E-invoice')).toBeInTheDocument();
+    act(() => { off.dispose(); });
+    await waitFor(() => expect(screen.queryByText('E-invoice')).toBeNull());
   });
 });
 

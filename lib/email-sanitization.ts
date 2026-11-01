@@ -57,6 +57,25 @@ export function sanitizeEmailHtml(html: string): string {
   return sanitizeWithDataUriGuard(html, EMAIL_SANITIZE_CONFIG);
 }
 
+const COMPOSER_ISLAND_SANITIZE_CONFIG = {
+  ...EMAIL_SANITIZE_CONFIG,
+  // The composer's own markers (data-cid on inline images, the signature's
+  // data-signature-block brackets) must survive; data-* is inert.
+  ALLOW_DATA_ATTR: true,
+};
+
+/**
+ * Sanitize the verbatim HTML a composer island (quoted original, signature)
+ * picks up when the editor parses its wrapper. The islands render into the
+ * app document, not the sandboxed viewer frame, and their wrapper reaches
+ * the editor from places that never ran a sanitizer: a re-opened draft
+ * written by another client or another member of a shared mailbox, a paste.
+ */
+export function sanitizeComposerIslandHtml(html: string): string {
+  if (!html) return '';
+  return sanitizeWithDataUriGuard(html, COMPOSER_ISLAND_SANITIZE_CONFIG);
+}
+
 /**
  * Sanitize config for emails rendered inside a sandboxed iframe.
  * Allows <style> tags because CSS is scoped to the iframe document and
@@ -87,10 +106,15 @@ export function sanitizeEmailHtmlForIframe(html: string): string {
  * `@font-face`). cid: parts are rewritten to blob: URLs beforehand, so they
  * survive the strict variant.
  */
-export function emailIframeCsp(externalBlocked: boolean): string {
+export function emailIframeCsp(externalBlocked: boolean, appFontSources: readonly string[] = []): string {
+  // The folders of the app's own bundled fonts (Settings > Accessibility, mail
+  // in the app's font). A path, never the whole origin: a mail must not be able
+  // to make requests to the app's other URLs.
+  const appFonts = appFontSources.filter((src) => /^https?:\/\/[^\s;,'"]+\/$/.test(src));
+  const fontSrc = ['data:', ...appFonts].join(' ');
   return externalBlocked
-    ? "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; font-src data:; media-src data: blob:; base-uri 'none'; form-action 'none'; frame-src 'none'"
-    : "default-src 'none'; img-src data: blob: http: https:; style-src 'unsafe-inline'; font-src data: http: https:; media-src data: blob: http: https:; base-uri 'none'; form-action 'none'; frame-src 'none'";
+    ? `default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; font-src ${fontSrc}; media-src data: blob:; base-uri 'none'; form-action 'none'; frame-src 'none'`
+    : `default-src 'none'; img-src data: blob: http: https:; style-src 'unsafe-inline'; font-src ${fontSrc} http: https:; media-src data: blob: http: https:; base-uri 'none'; form-action 'none'; frame-src 'none'`;
 }
 
 /** Outcome of {@link sanitizeEmailBodyForIframe}. */

@@ -12,6 +12,8 @@ import { useThemeStore } from '@/stores/theme-store';
 import { DEFAULT_SEARCH_FILTERS } from '@/lib/jmap/search-utils';
 import { useUIStore } from '@/stores/ui-store';
 import { threadKeyFor } from '@/lib/thread-utils';
+import { useToastStore } from '@/stores/toast-store';
+import { ToastContainer } from '@/components/ui/toast';
 
 const device = vi.hoisted(() => ({ mobile: false }));
 
@@ -31,14 +33,17 @@ vi.mock('@/components/layout/share-notification-toaster', () => ({ ShareNotifica
 vi.mock('@/components/layout/mv-top-bar', () => ({ MvTopBar: () => null }));
 vi.mock('@/components/layout/mv-side-panel', () => ({ MvSidePanel: () => null }));
 vi.mock('@/components/layout/mobile-header', () => ({ MobileHeader: () => null }));
-vi.mock('@/components/email/message-list-tabs', () => ({ MessageListTabs: () => null }));
+vi.mock('@/components/email/message-list-tabs', () => ({ useMessageListPanelProps: (id: string) => ({ id }), MessageListTabs: () => null }));
 vi.mock('@/components/search/search-box', () => ({ SearchBox: () => null }));
 vi.mock('@/components/tour/tour-provider', () => ({ useTour: () => ({ activeTour: null, registerStep: vi.fn() }) }));
 vi.mock('@/components/plugins/plugin-slot', () => ({ PluginSlot: () => null }));
 vi.mock('@/hooks/use-plugin-slot-offers', () => ({ usePluginSlotOffers: () => [] }));
 vi.mock('@/hooks/use-config', () => ({ useConfig: () => ({ appName: 'Mail' }) }));
 vi.mock('@/hooks/use-identity-sync', () => ({ useIdentitySync: () => {} }));
-vi.mock('@/hooks/use-pro-multi-account-identities', () => ({ useProMultiAccountIdentities: () => [] }));
+vi.mock('@/hooks/use-pro-multi-account-identities', () => ({
+  useProMultiAccountIdentities: () => [],
+  cachedIdentitiesForAccount: () => undefined,
+}));
 vi.mock('@/hooks/use-pro-multi-account-mailboxes', () => ({ useProMultiAccountMailboxes: () => {} }));
 vi.mock('@/hooks/use-wopi-status', () => ({ useWopiStatus: () => null, canWopiOpen: () => false }));
 vi.mock('@/hooks/use-browser-navigation', () => ({ useBrowserNavigation: () => {} }));
@@ -46,6 +51,7 @@ vi.mock('@/hooks/use-media-query', () => ({
   useDeviceDetection: () => ({ isMobile: device.mobile, isTablet: false, isDesktop: !device.mobile }),
   useMediaQuery: () => false,
   useIsDesktop: () => true,
+  narrowerThan: (px: number) => `(width < ${px / 16}rem)`,
 }));
 vi.mock('@/lib/push-bindings', () => ({ reconcilePushBindings: () => {}, releasePushBindings: () => {} }));
 vi.mock('@/components/email/email-list', async () => {
@@ -75,6 +81,8 @@ vi.mock('@/components/files/file-preview-modal', () => ({ FilePreviewModal: ({ o
 const { MailApp } = await import('../mail-app');
 const { ConversationEmailBody } = await import('@/components/email/thread-conversation-view');
 const { EmailViewer } = await import('@/components/email/email-viewer');
+const { ProEmailTabBody } = await import('@/components/pro/pro-email-tab-body');
+const { ProFolderTabBody } = await import('@/components/pro/pro-folder-tab-body');
 
 const sharedMailbox = { id: 'nrichmond:inbox', originalId: 'inbox', name: 'Shared', isShared: true, accountId: 'nrichmond' } as Mailbox;
 const primaryMailbox = { id: 'inbox', name: 'Inbox', role: 'inbox' } as Mailbox;
@@ -168,6 +176,122 @@ async function connectDownloadClient(serverUrl: string, username: string, accoun
   await client.connect();
   return client;
 }
+
+describe('standard mail attachment download feedback', () => {
+  const bytes = 'synthetic attachment bytes';
+  const downloadUrl = 'https://mail.example.com/download/nrichmond/same-blob/report.txt?accept=application%2Foctet-stream';
+  const response = () => new Response(bytes, { status: 200, headers: { 'Content-Type': 'application/octet-stream' } });
+
+  function DownloadToasts() {
+    const toasts = useToastStore(state => state.toasts);
+    return <ToastContainer toasts={toasts} onClose={useToastStore.getState().removeToast} />;
+  }
+
+  beforeEach(() => useToastStore.getState().clearToasts());
+  afterEach(() => useToastStore.getState().clearToasts());
+
+  async function openAttachment(action: 'Download button' | 'attachment click') {
+    const client = await connectDownloadClient('https://mail.example.com', 'test-login', 'postal12345');
+    useAuthStore.setState({ client,
+      getClientForAccount: id => id === 'login-primary' ? client : undefined,
+      getAllConnectedClients: () => new Map([['login-primary', client]]),
+    });
+    const selected = message({ attachments: [{ partId: '3', blobId: 'same-blob', name: 'report.txt', type: 'application/octet-stream', size: bytes.length }] });
+    useEmailStore.setState({ selectedEmail: selected, emails: [selected] });
+    // The explicit Download button must also bypass the Preview preference.
+    useSettingsStore.setState({ mailAttachmentAction: action === 'Download button' ? 'preview' : 'download' });
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockReset();
+    fetchMock.mockRejectedValue(new Error('Unexpected network request'));
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const downloads: { href: string; name: string; connected: boolean }[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      downloads.push({ href: this.href, name: this.download, connected: document.body.contains(this) });
+    });
+    render(<><MailApp /><DownloadToasts /></>);
+    const button = (await screen.findAllByTitle('download', {}, { timeout: 5000 }))[0];
+    const chip = button.closest('[data-testid="attachment"]')!;
+    const click = () => fireEvent.click(action === 'Download button' ? button : chip);
+
+    function expectRequests(count: number) {
+      expect(fetchMock).toHaveBeenCalledTimes(count);
+      for (let i = 0; i < count; i++) expectBlobRequest(downloadUrl, 'test-login', i);
+    }
+    async function expectDownload(count: number) {
+      await waitFor(() => expect(downloads).toHaveLength(1), { timeout: 4000 });
+      expectRequests(count);
+      expect(downloads[0]).toEqual({ href: 'blob:test', name: 'report.txt', connected: true });
+      expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+      const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob;
+      expect(await blob.text()).toBe(bytes);
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:test');
+    }
+    return { click, fetchMock, errors, downloads, button, selected, expectRequests, expectDownload };
+  }
+
+  describe.each(['Download button', 'attachment click'] as const)('%s', action => {
+    it.each(['HTTP 403', 'HTTP 503', 'exhausted network retry'] as const)(
+      'reports %s once and downloads on another click after recovery', async failure => {
+        const { click, fetchMock, errors, downloads, button, selected, expectRequests, expectDownload } = await openAttachment(action);
+        const attempts = failure === 'exhausted network retry' ? 2 : 1;
+        if (failure === 'exhausted network retry') {
+          fetchMock.mockRejectedValueOnce(new TypeError('synthetic offline'))
+            .mockRejectedValueOnce(new TypeError('synthetic offline'));
+        } else {
+          fetchMock.mockResolvedValueOnce(new Response('synthetic refusal', { status: failure === 'HTTP 403' ? 403 : 503 }));
+        }
+        click();
+        await waitFor(() => expect(errors).toHaveBeenCalledWith('Failed to download attachment:', expect.any(Error)), { timeout: 4000 });
+        expectRequests(attempts);
+        expect(downloads).toEqual([]);
+        expect(URL.createObjectURL).not.toHaveBeenCalled();
+        expect(button).toBeEnabled();
+        expect(useEmailStore.getState().selectedEmail).toBe(selected);
+        // The shared next-intl test mock returns translation keys verbatim.
+        expect(useToastStore.getState().toasts).toEqual([
+          expect.objectContaining({ type: 'error', title: 'files.download_error' }),
+        ]);
+        expect(screen.getByText('files.download_error')).toBeVisible();
+
+        // Reuse the same UI node, client, owner and blob without navigation.
+        fetchMock.mockResolvedValueOnce(response());
+        click();
+        await expectDownload(attempts + 1);
+        expect(useEmailStore.getState().selectedEmail).toBe(selected);
+        expect(errors).toHaveBeenCalledTimes(1);
+        expect(useToastStore.getState().toasts).toHaveLength(1);
+      },
+    );
+
+    it('does not notify when the existing automatic network retry recovers', async () => {
+      const { click, fetchMock, errors, selected, expectDownload } = await openAttachment(action);
+      fetchMock.mockRejectedValueOnce(new TypeError('synthetic transient')).mockResolvedValueOnce(response());
+      click();
+      await expectDownload(2);
+      expect(errors).not.toHaveBeenCalled();
+      expect(useToastStore.getState().toasts).toEqual([]);
+      expect(screen.queryByText('files.download_error')).not.toBeInTheDocument();
+      expect(useEmailStore.getState().selectedEmail).toBe(selected);
+    });
+  });
+
+  it('finishes the original attachment download after switching messages', async () => {
+    const { click, fetchMock, errors, downloads, expectDownload } = await openAttachment('Download button');
+    let finish!: (value: Response) => void;
+    fetchMock.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    click();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const next = message({ id: 'next', subject: 'Next', sourceAccountId: 'different-owner', attachments: [] });
+    act(() => useEmailStore.setState({ selectedEmail: next }));
+    expect(screen.queryByText('report.txt')).not.toBeInTheDocument();
+    expect(downloads).toEqual([]);
+    await act(async () => finish(response()));
+    await expectDownload(1);
+    expect(useEmailStore.getState().selectedEmail).toBe(next);
+    expect(useToastStore.getState().toasts).toEqual([]);
+    expect(errors).not.toHaveBeenCalled();
+  });
+});
 
 describe('standard mail UI blob routing', () => {
   it.each([sharedMailbox.id, primaryMailbox.id])('uses the session downloadUrl for %s', async (mailboxId) => {
@@ -427,7 +551,7 @@ async function openPhoneConversation(ref: Email, threadClient: JMAPClient, selec
   fireEvent.click(await screen.findByText('Routing conversation'));
   await screen.findByRole('button', { name: 'email_viewer.back_to_list' });
   await waitFor(() => expect(threadFetch).toHaveBeenCalled());
-  await screen.findByText('threads.messages_other');
+  await screen.findByText('threads.messages_count');
   return threadFetch;
 }
 
@@ -600,5 +724,134 @@ describe('conversation blob routing', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(a.fetchBlob).toHaveBeenLastCalledWith('same-blob', 'card.png', 'image/png', 'owner-b');
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:owner-a');
+  });
+});
+
+
+// Pro hosts must carry the same message-scoped context as MailApp, including
+// when the global mail selection is absent or belongs to another message.
+type ProBlobAction = 'download' | 'preview click' | 'CID' | 'export';
+const proBlobActions: ProBlobAction[] = ['download', 'preview click', 'CID', 'export'];
+const proRoutes = [
+  { label: 'direct shared folder', secondary: false, owner: 'nrichmond', selection: 'null', unified: false },
+  { label: 'secondary shared folder', secondary: true, owner: 'nrichmond', selection: 'unrelated', unified: false },
+  { label: 'primary folder', secondary: false, owner: 'postal12345', selection: 'null', unified: false },
+  { label: 'secondary primary folder', secondary: true, owner: 'secondary-primary', selection: 'unrelated', unified: false },
+  { label: 'Unified tab, null selection', secondary: true, owner: 'nrichmond', selection: 'null', unified: true },
+  { label: 'Unified tab, unrelated selection', secondary: true, owner: 'nrichmond', selection: 'unrelated', unified: true },
+  { label: 'explicit secondary email tab', secondary: true, owner: 'nrichmond', selection: 'null', unified: false, emailTab: true },
+];
+
+async function openProMessage(route: typeof proRoutes[number], action: ProBlobAction) {
+  const { a, b, fetchMock } = await conversationClients();
+  const origin = route.secondary ? b : a;
+  const full = message({
+    subject: 'Pro message',
+    attachments: [{ ...cardAttachment, name: 'photo.png', ...(action === 'CID' ? { cid: 'test-image' } : {}) }],
+    ...(action === 'CID' ? {
+      textBody: [], htmlBody: [{ partId: '1', blobId: 'html-blob', type: 'text/html', size: 30 }],
+      bodyValues: { '1': { value: '<img src="cid:test-image">', isTruncated: false, isEncodingProblem: false } },
+    } : {}),
+  });
+  const stub = { ...full, sourceClientAccountId: 'login-other', sourceAccountId: route.owner };
+  vi.spyOn(a, 'getEmail').mockResolvedValue(full);
+  vi.spyOn(b, 'getEmail').mockResolvedValue(full);
+  useSettingsStore.setState({ emailDownloadTemplate: '{subject}', mailAttachmentAction: action === 'preview click' ? 'preview' : 'download' });
+  useEmailStore.setState({
+    emails: route.unified ? [stub] : [],
+    selectedEmail: route.selection === 'null' ? null : message({ id: 'unrelated', sourceClientAccountId: 'login-primary', sourceAccountId: 'unrelated-owner' }),
+    isUnifiedView: route.unified, selectedMailbox: route.unified ? '__unified_inbox__' : sharedMailbox.id,
+    accountMailboxes: { 'login-primary': [primaryMailbox, sharedMailbox], 'login-other': [primaryMailbox, sharedMailbox] },
+  });
+  if (route.unified || route.emailTab) {
+    render(<ProEmailTabBody tabId="reader" data={{ accountId: route.owner, clientAccountId: route.emailTab ? 'login-other' : undefined, emailId: full.id, mailboxId: '__unified_inbox__', title: full.subject! }} />);
+  } else {
+    const mailbox = route.owner === 'nrichmond' ? sharedMailbox : primaryMailbox;
+    vi.spyOn(origin, 'getEmails').mockResolvedValue({ emails: [full], total: 1, hasMore: false });
+    render(<ProFolderTabBody tabId="folder" data={{ accountId: route.secondary ? 'login-other' : 'login-primary', mailboxId: mailbox.id, title: mailbox.name }} />);
+    fireEvent.click(await screen.findByText('Pro message'));
+  }
+  if (action === 'CID') await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  else await screen.findAllByText('photo.png');
+  return { a, b, origin, fetchMock, full };
+}
+
+async function actOnProBlob(action: ProBlobAction) {
+  if (action === 'download') await downloadAttachment();
+  if (action === 'preview click') {
+    fireEvent.click((await screen.findAllByText('photo.png'))[0]);
+    // Preserve Pro's existing action: Preview clicks download, with no modal.
+    expect(screen.queryByText('Preview fetch')).not.toBeInTheDocument();
+  }
+  if (action === 'export') await exportEmail();
+}
+function expectProBlob(route: typeof proRoutes[number], action: ProBlobAction, index = 0) {
+  const host = route.secondary ? 'secondary' : 'primary';
+  const blobPath = action === 'export' ? 'raw-blob/Pro%20message.eml?accept=message%2Frfc822' : 'same-blob/photo.png?accept=image%2Fpng';
+  expectBlobRequest(`https://${host}.example.com/download/${route.owner}/${blobPath}`, `${host}-login`, index);
+}
+
+describe('Pro blob routing', () => {
+  it.each(proRoutes.flatMap(route => proBlobActions.map(action => ({ ...route, action }))))(
+    '$label: $action uses the message owner and authenticated client', async route => {
+      const { origin, fetchMock } = await openProMessage(route, route.action);
+      await actOnProBlob(route.action);
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      expectProBlob(route, route.action);
+      if (route.owner === 'nrichmond') expect(origin.getEmail).toHaveBeenCalledWith('email', route.owner);
+    },
+  );
+
+  it.each([proRoutes[0], proRoutes[1], proRoutes[4]].flatMap(route => proBlobActions.map(action => ({ ...route, action }))))(
+    '$label: $action retains its source after account and selection changes', async route => {
+      const { a, b, fetchMock } = await openProMessage(route, route.action);
+      if (route.action === 'CID') await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      // Leave the loaded reader mounted while a different Mail pane navigates.
+      act(() => {
+        useEmailStore.setState({ emails: [], selectedEmail: message({ id: 'other', sourceClientAccountId: 'login-primary', sourceAccountId: 'unrelated-owner' }), selectedMailbox: 'inbox', isUnifiedView: false });
+        useAuthStore.setState({ client: route.secondary ? b : a, activeAccountId: route.secondary ? 'login-other' : 'login-primary' });
+      });
+      // Switch through null, as reconnecting account switches can do.
+      act(() => useAuthStore.setState({ client: null }));
+      act(() => useAuthStore.setState({ client: route.secondary ? a : b, activeAccountId: route.secondary ? 'login-primary' : 'login-other' }));
+      await act(async () => {});
+      await actOnProBlob(route.action);
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      for (let index = 0; index < fetchMock.mock.calls.length; index++) expectProBlob(route, route.action, index);
+    },
+  );
+
+  it('retains an in-flight Unified load across account and selection changes', async () => {
+    const { a, b, fetchMock } = await conversationClients();
+    let finish!: (email: Email) => void;
+    vi.spyOn(b, 'getEmail').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const wrongClient = vi.spyOn(a, 'getEmail');
+    useEmailStore.setState({ emails: [message({ sourceClientAccountId: 'login-other', sourceAccountId: 'nrichmond' })], selectedEmail: null, isUnifiedView: true });
+    render(<ProEmailTabBody tabId="reader" data={{ accountId: 'nrichmond', emailId: 'email', mailboxId: null, title: 'Loading' }} />);
+    await waitFor(() => expect(b.getEmail).toHaveBeenCalledWith('email', 'nrichmond'));
+    act(() => {
+      useEmailStore.setState({ emails: [], selectedEmail: message({ id: 'unrelated' }), isUnifiedView: false, selectedMailbox: 'inbox' });
+      useAuthStore.setState({ client: b, activeAccountId: 'login-other' });
+    });
+    await act(async () => finish(message({ attachments: [{ ...cardAttachment, name: 'photo.png' }] })));
+    await downloadAttachment();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expectProBlob(proRoutes[4], 'download');
+    expect(wrongClient).not.toHaveBeenCalled();
+    expect(b.getEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it('changes CID routing when a reused reader opens identical ids on another client/owner', async () => {
+    const { a, b, fetchMock } = await conversationClients();
+    const full = inlineMessage({ attachments: [{ ...cardAttachment, name: 'photo.png', cid: 'test-image' }] });
+    vi.spyOn(a, 'getEmail').mockResolvedValue(full);
+    vi.spyOn(b, 'getEmail').mockResolvedValue({ ...full });
+    const reader = (login: string, owner: string) => <ProEmailTabBody tabId="reader" data={{ accountId: owner, clientAccountId: login, emailId: full.id, mailboxId: null, title: full.subject! }} />;
+    const { rerender } = render(reader('login-primary', 'owner-a'));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expectBlobRequest('https://primary.example.com/download/owner-a/same-blob/photo.png?accept=image%2Fpng', 'primary-login');
+    rerender(reader('login-other', 'owner-b'));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expectBlobRequest('https://secondary.example.com/download/owner-b/same-blob/photo.png?accept=image%2Fpng', 'secondary-login', 1);
   });
 });

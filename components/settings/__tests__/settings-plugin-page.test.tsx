@@ -28,6 +28,7 @@ vi.mock('@/components/layout/navigation-rail', () => ({ NavigationRail: () => nu
 vi.mock('@/components/layout/sidebar-apps-modal', () => ({ SidebarAppsModal: () => null }));
 vi.mock('@/components/plugins/app-top-banner-slot', () => ({ AppTopBannerSlot: () => null }));
 vi.mock('@/components/settings/appearance-settings', () => ({ AppearanceSettings: () => <div>appearance pane</div> }));
+vi.mock('@/components/settings/accessibility-settings', () => ({ AccessibilitySettings: () => <div>accessibility pane</div> }));
 
 const { SettingsApp } = await import('../settings-app');
 const registry = await import('@/lib/plugin-sandbox/registry');
@@ -127,5 +128,13 @@ describe('Settings plugin pages', () => {
 
     await waitFor(() => expect(createSlotInstance).toHaveBeenCalled());
     expect((createSlotInstance.mock.calls[0][0] as { slot: string }).slot).toBe('settings-page');
+  });
+});
+
+// SET-21: every settings page has an h1 with its name on the desktop too.
+describe('Settings page heading', () => {
+  it('names the open page in an h1', () => {
+    render(<SettingsApp linkSegments={[]} />);
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('settings.tabs.appearance');
   });
 });

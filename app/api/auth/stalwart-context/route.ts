@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { JmapAuthVerificationError, resolveJmapIdentity } from '@/lib/auth/verify-jmap-auth';
+import { cookies } from 'next/headers';
 import { setStalwartAuthContext } from '@/lib/stalwart/auth-context';
+import { readSignInStamp, writeSignInStamp } from '@/lib/auth/session-age';
+import { refreshTokenCookieName } from '@/lib/oauth/tokens';
 import { configManager } from '@/lib/admin/config-manager';
 import { isPublicHttpUrl } from '@/lib/security/url-guard';
 import { recordLogin } from '@/lib/telemetry/login-tracker';
@@ -11,6 +14,7 @@ import { rejectCrossOriginRequest } from '@/lib/security/same-origin';
 import { insecureCookieHint, verificationFailureBody } from '@/lib/auth/verification-failure';
 import { loginClientAddress } from '@/lib/auth/client-address';
 import { LOGIN_BUDGET_RETRY_AFTER_SECONDS, reserveLoginAttempt } from '@/lib/auth/verify-budget';
+import { recordStoredCredentialStatus } from '@/lib/stalwart/stored-credential-budget';
 
 function getSlot(request: NextRequest, bodySlot: unknown): number {
   if (typeof bodySlot === 'number' && bodySlot >= 0 && bodySlot < MAX_ACCOUNT_SLOTS) {
@@ -97,6 +101,18 @@ export async function POST(request: NextRequest) {
       throw error;
     }
     refund();
+    // Just signed in: an older refusal of this credential no longer applies.
+    recordStoredCredentialStatus(authHeader, 200);
+
+    // A token sign-in's stamp (lib/auth/session-age.ts) knows no account:
+    // the token routes never see one. The first verified account names it,
+    // so the maximum session length of its domain applies on renewal.
+    const cookieStore = await cookies();
+    const refreshToken = cookieStore.get(refreshTokenCookieName(slot))?.value;
+    const stamp = refreshToken ? readSignInStamp(cookieStore, slot, refreshToken) : null;
+    if (refreshToken && stamp && !stamp.account) {
+      writeSignInStamp(cookieStore, slot, { signedInAt: stamp.signedInAt, refreshToken, account: accountName });
+    }
 
     await setStalwartAuthContext(slot, {
       serverUrl: normalizedServerUrl,

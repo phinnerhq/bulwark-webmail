@@ -133,6 +133,57 @@ export function getSenderVerification(
   return { status: 'unverified', domain, sentFrom };
 }
 
+/**
+ * `with` protocols (RFC 3848) that record an authenticated submission: the
+ * client handed the message in after logging in, so whatever
+ * Authentication-Results it carries below that hop are the client's own text.
+ */
+const SUBMISSION_PROTOCOL_RE = /\bwith\s+(?:UTF8)?(?:E?SMTP|LMTP)S?A\b/i;
+
+/**
+ * Whether the topmost Authentication-Results header looks like it was
+ * written by a server that received the message, rather than by whoever
+ * composed it. A receiving server writes its Received line first and its
+ * Authentication-Results below it (Stalwart and Gmail both do), so: a
+ * Received header must sit above the topmost Authentication-Results, and the
+ * nearest one must not record an authenticated submission. Takes the headers
+ * in message order.
+ *
+ * This only catches a forged header on its own. Stalwart (0.16 and 1.0)
+ * keeps both headers when a signed-in user writes them into a mail they
+ * submit over JMAP, and adds nothing above them, so a forged Received line
+ * followed by a forged "dkim=pass" arrives exactly like mail from outside.
+ * Only the server can tell them apart.
+ */
+export function authenticationResultsOnReceipt(headers: readonly { name: string; value: string }[]): boolean {
+  const index = headers.findIndex((header) => header.name.toLowerCase() === 'authentication-results');
+  if (index < 0) return false;
+  for (let i = index - 1; i >= 0; i--) {
+    if (headers[i].name.toLowerCase() !== 'received') continue;
+    return !SUBMISSION_PROTOCOL_RE.test(headers[i].value);
+  }
+  return false;
+}
+
+/**
+ * The From domain whose BIMI logo this message may show, or undefined. BIMI
+ * needs a DMARC pass for the very domain in From: an aligned SPF or DKIM
+ * pass without a DMARC verdict isn't enough, and neither is a pass that the
+ * receiving server recorded for another header.from. Whether the domain
+ * enforces DMARC and publishes a logo is /api/bimi's to find out.
+ */
+export function brandIndicatorDomain(
+  email: { from?: { email?: string | null }[] | null; authenticationResults?: AuthenticationResults } | undefined,
+): string | undefined {
+  const auth = email?.authenticationResults;
+  const fromEmail = email?.from?.[0]?.email ?? undefined;
+  if (!auth?.dmarc || auth.dmarc.result !== 'pass' || !fromEmail) return undefined;
+  const domain = domainOf(fromEmail);
+  if (!domain || isAuthenticationSpoofed(auth)) return undefined;
+  const checked = auth.dmarc.domain ? domainOf(`@${auth.dmarc.domain}`) : domain;
+  return checked === domain ? domain : undefined;
+}
+
 interface ResInfo {
   method: string;
   result: string;
@@ -228,6 +279,11 @@ const DMARC_SEVERITY: Record<string, number> = {
  * DKIM, DMARC and iprev come from the topmost header only, and the others
  * can only escalate SPF to a failure, never supply a pass.
  */
+function identityDomain(identity: string | undefined): string | undefined {
+  const at = identity?.lastIndexOf('@') ?? -1;
+  return identity && at >= 0 && at < identity.length - 1 ? identity.slice(at + 1) : undefined;
+}
+
 export function parseAuthenticationResults(headers: string | readonly string[]): AuthenticationResults {
   const results: AuthenticationResults = {};
   const list = typeof headers === 'string' ? [headers] : headers;
@@ -285,7 +341,9 @@ export function parseAuthenticationResults(headers: string | readonly string[]):
     .filter((info) => info.method === 'dkim')
     .map((info) => ({
       result: info.result as DkimResult,
-      domain: info.props['header.d'],
+      // Some receivers name the signature only by its identity (`header.i`,
+      // `@domain` or `user@domain`, RFC 8601 2.7.1); its domain is the signer's.
+      domain: info.props['header.d'] ?? identityDomain(info.props['header.i']),
       selector: info.props['header.s'],
     }));
   if (dkimResults.length > 0) {

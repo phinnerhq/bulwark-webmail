@@ -2,18 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { logger } from '@/lib/logger';
 import { refreshTokenCookieName, refreshTokenServerCookieName } from '@/lib/oauth/tokens';
-import { getCookieOptions } from '@/lib/oauth/cookie-config';
+import { getCookieOptions, getSignInCookieOptions } from '@/lib/oauth/cookie-config';
 import { readFileEnv } from '@/lib/read-file-env';
 import { configManager } from '@/lib/admin/config-manager';
 import { isPublicHttpUrl } from '@/lib/security/url-guard';
 import { recordLogin } from '@/lib/telemetry/login-tracker';
-import { parseJmapServers, findServerByUrl, findServerById } from '@/lib/admin/jmap-servers';
+import { parseJmapServers, findServerByUrl, findServerById, resolveTrustedJmapUrl } from '@/lib/admin/jmap-servers';
 import { MAX_ACCOUNT_SLOTS } from '@/lib/account-utils';
 import { DEFAULT_CLIENT_ID } from '@/lib/oauth/token-exchange';
 import { rejectCrossOriginRequest } from '@/lib/security/same-origin';
 import { stalwartPasswordLogin } from '@/lib/auth/stalwart-password-login';
 import { loginClientAddress } from '@/lib/auth/client-address';
 import { LOGIN_BUDGET_RETRY_AFTER_SECONDS, reserveLoginAttempt } from '@/lib/auth/verify-budget';
+import { writeSignInStamp } from '@/lib/auth/session-age';
 
 /**
  * Exchange a password + (optional) TOTP code for OAuth tokens.
@@ -38,6 +39,7 @@ async function attemptLogin(
   serverId: string | null,
   upstreamTrusted: boolean,
   clientIp: string,
+  rememberMe: boolean,
 ): Promise<NextResponse> {
   const base = upstreamUrl.replace(/\/+$/, '');
 
@@ -45,10 +47,10 @@ async function attemptLogin(
   // server entry has its own oauth block configured.
   const serverList = parseJmapServers(configManager.get<unknown>('jmapServers', []));
   const entry = findServerById(serverList, serverId);
-  const clientId = entry?.oauth?.clientId
+  const configuredClientId = entry?.oauth?.clientId
     || configManager.get<string>('oauthClientId', '')
-    || process.env.OAUTH_CLIENT_ID
-    || DEFAULT_CLIENT_ID;
+    || process.env.OAUTH_CLIENT_ID;
+  const clientId = configuredClientId || DEFAULT_CLIENT_ID;
   const clientSecret = entry?.oauth?.clientSecret
     || configManager.get<string>('oauthClientSecret', '')
     || process.env.OAUTH_CLIENT_SECRET
@@ -74,6 +76,8 @@ async function attemptLogin(
     redirectUri,
     trusted: upstreamTrusted,
     clientIp,
+    // Stalwart 1.0 knows no client by the default name.
+    registerUnknownClient: !configuredClientId,
   });
   // Only a rejected password spends the budget. `totp_required` means the
   // password was right and the code is still missing, which every TOTP login
@@ -108,7 +112,7 @@ async function attemptLogin(
 
   logger.info('TOTP login succeeded');
   void recordLogin(username, base);
-  return await storeAndRespond(result.tokens, slot, serverId);
+  return await storeAndRespond(result.tokens, slot, serverId, rememberMe);
 }
 
 function trimUrl(url: string): string {
@@ -121,7 +125,7 @@ export async function POST(request: NextRequest) {
   const crossOrigin = rejectCrossOriginRequest(request);
   if (crossOrigin) return crossOrigin;
   try {
-    const { serverUrl, username, password, totp, slot: bodySlot, server_id: bodyServerId, redirectUri: bodyRedirectUri } =
+    const { serverUrl, username, password, totp, slot: bodySlot, server_id: bodyServerId, redirectUri: bodyRedirectUri, rememberMe } =
       await request.json();
 
     if (!serverUrl || !username || !password) {
@@ -134,9 +138,10 @@ export async function POST(request: NextRequest) {
 
     // Pin the upstream URL to a configured JMAP server. The list of allowed
     // servers is `jmapServerUrl` plus any entry from `jmapServers`. Only when
-    // no server is configured (and the deployment explicitly allows custom
-    // JMAP endpoints) do we fall back to the user-supplied URL - and even then
-    // it must resolve to a public address.
+    // the user named none of them (and the deployment explicitly allows custom
+    // JMAP endpoints) do we use the user-supplied URL - and even then it must
+    // resolve to a public address. Their password belongs to that server, and
+    // the browser goes on to use the token there.
     await configManager.ensureLoaded();
     const configuredServerUrl =
       configManager.get<string>('jmapServerUrl', '') ||
@@ -151,11 +156,12 @@ export async function POST(request: NextRequest) {
     let resolvedServerId: string | null = null;
     const requestedEntry = findServerById(serverList, requestedServerId);
     const matchedEntry = requestedEntry || findServerByUrl(serverList, serverUrl);
+    const customRequested = allowCustomEndpoint && !resolveTrustedJmapUrl(serverUrl, configuredServerUrl, serverList);
 
     if (matchedEntry) {
       upstreamUrl = matchedEntry.url;
       resolvedServerId = matchedEntry.id;
-    } else if (configuredServerUrl) {
+    } else if (configuredServerUrl && !customRequested) {
       upstreamUrl = configuredServerUrl;
     } else if (allowCustomEndpoint) {
       if (!(await isPublicHttpUrl(serverUrl))) {
@@ -187,6 +193,8 @@ export async function POST(request: NextRequest) {
       resolvedServerId,
       upstreamTrusted,
       loginClientAddress(request),
+      // Clients from before the flag remembered every sign-in.
+      rememberMe !== false,
     );
   } catch (error) {
     logger.error('TOTP login error', { error: error instanceof Error ? error.message : 'Unknown error' });
@@ -198,11 +206,17 @@ async function storeAndRespond(
   tokens: { access_token: string; expires_in?: number; refresh_token?: string },
   slot: number,
   serverId: string | null,
+  rememberMe: boolean,
 ): Promise<NextResponse> {
   const cookieStore = await cookies();
+  // A sign-in: the maximum session length counts from here (lib/auth/session-age.ts).
+  const signedInAt = Date.now();
   if (tokens.refresh_token) {
     const cookieName = refreshTokenCookieName(slot);
-    cookieStore.set(cookieName, tokens.refresh_token, getCookieOptions());
+    // Without "Remember me" the sign-in ends with the browser session.
+    const options = getSignInCookieOptions(rememberMe);
+    cookieStore.set(cookieName, tokens.refresh_token, options);
+    writeSignInStamp(cookieStore, slot, { signedInAt, refreshToken: tokens.refresh_token }, options);
   }
   const serverCookieName = refreshTokenServerCookieName(slot);
   if (serverId) {
@@ -215,5 +229,6 @@ async function storeAndRespond(
     access_token: tokens.access_token,
     expires_in: tokens.expires_in || 3600,
     has_refresh_token: !!tokens.refresh_token,
+    signed_in_at: signedInAt,
   });
 }

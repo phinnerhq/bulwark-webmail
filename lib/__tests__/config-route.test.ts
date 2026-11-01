@@ -35,6 +35,8 @@ const MANAGED_ENV = [
   'FAVICON_URL', 'APP_LOGO_LIGHT_URL', 'APP_LOGO_DARK_URL', 'LOGIN_COMPANY_NAME',
   'LOGIN_IMPRINT_URL', 'LOGIN_PRIVACY_POLICY_URL', 'LOGIN_WEBSITE_URL', 'DOMAIN_BRANDING',
   'JMAP_SERVERS', 'JMAP_SERVER_AUTO_PICK_BY_DOMAIN', 'SOURCE_CODE_URL', 'LOGIN_SHOW_REMEMBER_ME',
+  'ACCESSIBILITY_STATEMENT_URL', 'ACCESSIBILITY_FEEDBACK_URL', 'HELP_URL', 'EASY_READ_URL', 'SIGN_LANGUAGE_URL',
+  'LOGIN_USERNAME_PLACEHOLDER',
 ] as const;
 
 describe('config API route', () => {
@@ -174,6 +176,13 @@ describe('config API route', () => {
     expect(config.loginWebsiteUrl).toBe('https://acme.com');
   });
 
+  it('publishes the login email placeholder, empty when unset (#1423)', async () => {
+    expect((await getConfig()).loginUsernamePlaceholder).toBe('');
+
+    vi.stubEnv('LOGIN_USERNAME_PLACEHOLDER', 'max.mustermann@acme.example');
+    expect((await getConfig()).loginUsernamePlaceholder).toBe('max.mustermann@acme.example');
+  });
+
   it('publishes the source code URL for the About card (#1161)', async () => {
     vi.stubEnv('SOURCE_CODE_URL', 'https://git.example.com/acme/webmail/tree/v1.2.3');
 
@@ -188,6 +197,31 @@ describe('config API route', () => {
       expect((await getConfig()).sourceCodeUrl).toBe('');
     },
   );
+
+  it('publishes the accessibility and help links (OP-01)', async () => {
+    vi.stubEnv('ACCESSIBILITY_STATEMENT_URL', 'https://acme.com/accessibility');
+    vi.stubEnv('ACCESSIBILITY_FEEDBACK_URL', 'barriers@acme.com');
+    vi.stubEnv('HELP_URL', 'https://acme.com/help');
+    vi.stubEnv('EASY_READ_URL', 'https://acme.com/leichte-sprache');
+    vi.stubEnv('SIGN_LANGUAGE_URL', 'javascript:alert(1)');
+
+    const config = await getConfig();
+
+    expect(config.accessibilityStatementUrl).toBe('https://acme.com/accessibility');
+    // An email address becomes a mail link; a script URL is dropped.
+    expect(config.accessibilityFeedbackUrl).toBe('mailto:barriers@acme.com');
+    expect(config.helpUrl).toBe('https://acme.com/help');
+    expect(config.easyReadUrl).toBe('https://acme.com/leichte-sprache');
+    expect(config.signLanguageUrl).toBe('');
+  });
+
+  it('leaves the accessibility and help links empty when unset', async () => {
+    const config = await getConfig();
+
+    expect(config.accessibilityStatementUrl).toBe('');
+    expect(config.accessibilityFeedbackUrl).toBe('');
+    expect(config.helpUrl).toBe('');
+  });
 
   it('should handle partial login customization', async () => {
     vi.stubEnv('LOGIN_COMPANY_NAME', 'Partial Corp');
@@ -281,6 +315,29 @@ describe('config API route', () => {
 
       expect(config.loginCompanyName).toBe('Brand One');
       expect(config.loginWebsiteUrl).toBe('https://one.example');
+    });
+
+    it('overrides the accessibility links per domain', async () => {
+      vi.stubEnv('ACCESSIBILITY_STATEMENT_URL', 'https://default.example/accessibility');
+      vi.stubEnv('HELP_URL', 'https://default.example/help');
+      vi.stubEnv('DOMAIN_BRANDING', JSON.stringify([
+        { host: 'mail1.example.com', accessibilityStatementUrl: 'https://one.example/barrierefreiheit' },
+      ]));
+
+      const config = await getConfig({ host: 'mail1.example.com' });
+
+      expect(config.accessibilityStatementUrl).toBe('https://one.example/barrierefreiheit');
+      expect(config.helpUrl).toBe('https://default.example/help');
+    });
+
+    it('overrides the login email placeholder per domain (#1423)', async () => {
+      vi.stubEnv('LOGIN_USERNAME_PLACEHOLDER', 'name@default.example');
+      vi.stubEnv('DOMAIN_BRANDING', JSON.stringify([
+        { host: 'mail1.example.com', loginUsernamePlaceholder: 'name@one.example' },
+      ]));
+
+      expect((await getConfig({ host: 'mail1.example.com' })).loginUsernamePlaceholder).toBe('name@one.example');
+      expect((await getConfig({ host: 'other.example.com' })).loginUsernamePlaceholder).toBe('name@default.example');
     });
 
     it('falls through to the global value when the host has no entry', async () => {

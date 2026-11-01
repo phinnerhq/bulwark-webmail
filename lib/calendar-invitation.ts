@@ -21,9 +21,13 @@ export interface InvitationTrustAssessment {
     | 'authentication_missing'
     | 'sender_mismatch'
     | 'sender_mismatch_unverified'
+    | 'attendee_mismatch'
+    | 'attendee_mismatch_unverified'
     | null;
   senderEmail: string | null;
   organizerEmail: string | null;
+  /** The attendee who answers in a reply, counter or refresh. */
+  attendeeEmail: string | null;
 }
 
 export interface InvitationActorSummary {
@@ -212,11 +216,18 @@ function hasVerifiedAuthentication(email?: Pick<Email, 'from' | 'authenticationR
   return hasAlignedAuthenticationPass(email?.authenticationResults, getPrimaryAddressEmail(email?.from) ?? undefined);
 }
 
-function hasAuthenticationFailure(email?: Pick<Email, 'authenticationResults'>): boolean {
+/**
+ * A failed check that leaves the From domain unauthenticated. A DMARC fail
+ * always counts; one mechanism failing does not when another aligned pass
+ * vouches for the sender, as when a relay breaks SPF but the author's DKIM
+ * signature still verifies (#1403).
+ */
+function hasAuthenticationFailure(email: Pick<Email, 'authenticationResults'> | undefined, verified: boolean): boolean {
   const authenticationResults = email?.authenticationResults;
+  if (authenticationResults?.dmarc?.result === 'fail') return true;
+  if (verified) return false;
   return Boolean(
-    authenticationResults?.dmarc?.result === 'fail'
-    || authenticationResults?.dkim?.result === 'fail'
+    authenticationResults?.dkim?.result === 'fail'
     || authenticationResults?.dkim?.result === 'policy'
     || authenticationResults?.dkim?.result === 'permerror'
     || authenticationResults?.spf?.result === 'fail'
@@ -392,24 +403,39 @@ export function getInvitationMethod(
   return 'unknown';
 }
 
+/**
+ * `ownAddresses` are the reader's own addresses. Mail from another user on
+ * the reader's domains that carries no Authentication-Results header at all
+ * was handed in by a signed-in user rather than received from outside:
+ * Stalwart adds the header to everything that arrives on port 25 (#1374).
+ */
 export function getInvitationTrustAssessment(
   event: Partial<CalendarEvent>,
   email?: Pick<Email, 'from' | 'replyTo' | 'authenticationResults'>,
-  method: InvitationMethod = getInvitationMethod(event)
+  method: InvitationMethod = getInvitationMethod(event),
+  ownAddresses: string[] = []
 ): InvitationTrustAssessment {
   const organizerEmail = getOrganizerEmail(event);
   const senderEmail = getPrimaryAddressEmail(email?.from) || getPrimaryAddressEmail(email?.replyTo);
+  // A reply, counter or refresh is sent by the attendee who answers; the
+  // organizer is usually the user reading it.
+  const fromAttendee = method === 'reply' || method === 'counter' || method === 'refresh';
+  const attendeeEmail = fromAttendee ? getInvitationActorSummary(event, method)?.email ?? null : null;
+  const expectedEmail = fromAttendee ? attendeeEmail : organizerEmail;
   const verifiedAuthentication = hasVerifiedAuthentication(email);
-  const authenticationFailure = hasAuthenticationFailure(email);
-  const senderMismatch = Boolean(senderEmail && organizerEmail && senderEmail !== organizerEmail);
-  const expectsAuthenticatedTransport = method !== 'unknown';
+  const authenticationFailure = hasAuthenticationFailure(email, verifiedAuthentication);
+  const senderMismatch = Boolean(senderEmail && expectedEmail && senderEmail !== expectedEmail);
+  const senderDomain = senderEmail?.split('@').pop();
+  const internal = Boolean(email && !email.authenticationResults && senderDomain
+    && ownAddresses.some((address) => address.toLowerCase().split('@').pop() === senderDomain));
+  const expectsAuthenticatedTransport = method !== 'unknown' && !internal;
+  const addresses = { senderEmail, organizerEmail, attendeeEmail };
 
   if (senderMismatch && (authenticationFailure || !verifiedAuthentication)) {
     return {
       level: 'warning',
-      reason: 'sender_mismatch_unverified',
-      senderEmail,
-      organizerEmail,
+      reason: fromAttendee ? 'attendee_mismatch_unverified' : 'sender_mismatch_unverified',
+      ...addresses,
     };
   }
 
@@ -417,17 +443,15 @@ export function getInvitationTrustAssessment(
     return {
       level: 'warning',
       reason: 'authentication_failed',
-      senderEmail,
-      organizerEmail,
+      ...addresses,
     };
   }
 
   if (senderMismatch) {
     return {
       level: 'caution',
-      reason: 'sender_mismatch',
-      senderEmail,
-      organizerEmail,
+      reason: fromAttendee ? 'attendee_mismatch' : 'sender_mismatch',
+      ...addresses,
     };
   }
 
@@ -435,16 +459,14 @@ export function getInvitationTrustAssessment(
     return {
       level: 'caution',
       reason: 'authentication_missing',
-      senderEmail,
-      organizerEmail,
+      ...addresses,
     };
   }
 
   return {
     level: 'trusted',
     reason: null,
-    senderEmail,
-    organizerEmail,
+    ...addresses,
   };
 }
 

@@ -11,7 +11,7 @@ let sameOrigin = true;
 let stalwartFeatures = true;
 vi.mock('@/lib/stalwart/credentials', () => ({
   getStalwartCredentials: async () => (caller
-    ? { serverUrl: 'https://mail.example.org', authHeader: `Bearer ${caller.token}`, username: 'claimed@example.org', hasSessionCookie: true, slot: 0, trusted: caller.trusted }
+    ? { serverUrl: 'https://mail.example.org', authHeader: `Bearer ${caller.token}`, username: 'claimed@example.org', accountName: 'claimed@example.org', hasSessionCookie: true, slot: 0, trusted: caller.trusted }
     : null),
 }));
 vi.mock('@/lib/admin/config-manager', () => ({
@@ -159,7 +159,7 @@ describe('/api/account/masked-addresses', () => {
     const picks = [ADJECTIVES.indexOf('calm'), NOUNS.indexOf('otter'), ADJECTIVES.indexOf('swift'), NOUNS.indexOf('heron')];
     const { createMaskedAddress, resolveMaskedAddressContext, getMaskedAddressConfig } = await import('@/lib/masked-addresses/server');
     const ctx = await resolveMaskedAddressContext(
-      { serverUrl: 'https://mail.example.org', authHeader: 'Bearer alice-token', username: 'x', hasSessionCookie: true, slot: 0, trusted: true },
+      { serverUrl: 'https://mail.example.org', authHeader: 'Bearer alice-token', username: 'x', accountName: 'x', hasSessionCookie: true, slot: 0, trusted: true },
       getMaskedAddressConfig()!,
     );
     const mask = await createMaskedAddress(ctx, null, () => picks.shift()!);

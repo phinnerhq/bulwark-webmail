@@ -14,6 +14,8 @@
 import { configManager } from './config-manager';
 import { getPluginRegistry, getThemeRegistry, type ExtensionSource } from './plugin-registry';
 import { listHistory, type HistoryEntry } from './extension-history';
+import { isNoThirdPartyTrafficOn } from './third-party-mode';
+import { isBuiltInHost } from '@/lib/outgoing-hosts';
 
 export const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || '';
 
@@ -21,7 +23,24 @@ export type Channel = 'stable' | 'beta';
 
 export async function getDirectoryUrl(): Promise<string> {
   await configManager.ensureLoaded();
-  return configManager.get<string>('extensionDirectoryUrl') || 'https://extensions.bulwarkmail.org';
+  const url = configManager.get<string>('extensionDirectoryUrl') || 'https://extensions.bulwarkmail.org';
+  // Defense in depth: the routes ask directoryOff() first and answer 403.
+  if (isBuiltInHost(url) && await isNoThirdPartyTrafficOn()) throw new DirectoryError(DIRECTORY_OFF_MESSAGE, 403);
+  return url;
+}
+
+export const DIRECTORY_OFF_MESSAGE =
+  'The official extension directory is off: this server does not contact outside services (NO_THIRD_PARTY_TRAFFIC). Point EXTENSION_DIRECTORY_URL at a self-hosted directory to use the marketplace.';
+
+/**
+ * Whether the marketplace must not ask its directory: the no-third-party
+ * mode is on and the directory is the official one (#903). A self-hosted
+ * directory is the deployment's own and stays reachable.
+ */
+export async function directoryOff(): Promise<boolean> {
+  await configManager.ensureLoaded();
+  const url = configManager.get<string>('extensionDirectoryUrl') || 'https://extensions.bulwarkmail.org';
+  return isBuiltInHost(url) && await isNoThirdPartyTrafficOn();
 }
 
 export function getDirectoryChannel(): Channel {
@@ -69,6 +88,41 @@ export async function directoryJson<T>(url: URL, init: RequestInit & { timeoutMs
   return res.json() as Promise<T>;
 }
 
+/**
+ * The bytes of a bundle download, refused once they pass `maxBytes` (the
+ * package size limit). Reading the whole answer first let a directory, or
+ * anyone in the path to it, stream until the server ran out of memory.
+ */
+export async function readBundleBytes(res: Response, maxBytes: number): Promise<ArrayBuffer> {
+  const tooLarge = () => new DirectoryError(`The bundle is larger than ${Math.round(maxBytes / (1024 * 1024))} MB`, 413);
+  const declared = Number(res.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await res.body?.cancel().catch(() => {});
+    throw tooLarge();
+  }
+  if (!res.body) return res.arrayBuffer();
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => {});
+      throw tooLarge();
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out.buffer;
+}
+
 // ─── Directory shapes (lib/api/views.ts in the directory) ──────────────────
 
 export interface DirectoryVersion {
@@ -84,9 +138,19 @@ export interface DirectoryVersion {
   downloadUrl: string;
   /** Only on the full view (`/versions`, `/versions/{v}`). */
   changelog?: string | null;
+  /** Whether the changelog has a Security or Breaking heading (directories since 2026-10-30). */
+  notes?: { security: boolean; breaking: boolean };
   downloads?: number;
   signature?: { keyId: string } | null;
   provenance?: { source: { host: string; repo: string | null; commit: string | null } } | null;
+}
+
+/** One version's notes in an update: every version between the installed one and the offered one has one. */
+export interface DirectoryChangelogEntry {
+  version: string;
+  publishedAt: string | null;
+  changelog: string | null;
+  notes: { security: boolean; breaking: boolean };
 }
 
 export interface DirectoryAuthor {

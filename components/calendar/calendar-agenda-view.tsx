@@ -4,7 +4,9 @@ import { useMemo, useRef, useCallback } from "react";
 import { useTranslations } from "next-intl";
 import { useDisplayDateFormatter } from "@/hooks/use-display-date-formatter";
 import { format, isTomorrow, startOfDay } from "date-fns";
-import { MapPin, Users } from "@/components/icons";
+import { CalendarDays, MapPin, Users } from "@/components/icons";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils";
 import { getEventColor } from "./event-card";
 import { getEventDayBounds, getEventEndDate, getEventStartDate, getPrimaryCalendarId } from "@/lib/calendar-utils";
@@ -13,6 +15,7 @@ import { getParticipantCount, isDeclinedByUser } from "@/lib/calendar-participan
 import { useScrollWindow } from "@/hooks/use-scroll-window";
 import type { ScrollWindowViewProps } from "@/lib/calendar-scroll-window";
 import type { CalendarEvent, Calendar } from "@/lib/jmap/types";
+import { useCvdColor } from "@/hooks/use-cvd-color";
 
 interface CalendarAgendaViewProps extends ScrollWindowViewProps {
   events: CalendarEvent[];
@@ -24,6 +27,8 @@ interface CalendarAgendaViewProps extends ScrollWindowViewProps {
   timeFormat?: "12h" | "24h";
   /** The user's calendar addresses, to mark events they declined (#1110). */
   currentUserEmails?: string[];
+  /** Offered on an empty agenda: make the first event. */
+  onCreateEvent?: () => void;
 }
 
 interface DayGroup {
@@ -48,8 +53,10 @@ export function CalendarAgendaView({
   onContextMenuEvent,
   timeFormat = "24h",
   currentUserEmails,
+  onCreateEvent,
 }: CalendarAgendaViewProps) {
   const t = useTranslations("calendar");
+  const paint = useCvdColor();
   // Grid days / event dates are display dates (local fields = wall-clock in
   // the user's zone); the app-wide formatter would shift them again (#755).
   const intlFormatter = useDisplayDateFormatter();
@@ -63,6 +70,7 @@ export function CalendarAgendaView({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bottomSentinelRef = useRef<HTMLDivElement>(null);
 
+  const hasEvents = events.length > 0;
   const grouped = useMemo(() => {
     const sorted = [...events].sort((a, b) =>
       getEventStartDate(a).getTime() - getEventStartDate(b).getTime()
@@ -177,13 +185,18 @@ export function CalendarAgendaView({
         )}
       </div>
 
-      {grouped.length === 0 && !isLoading && (
-        <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-          {t("events.no_events")}
-        </div>
+      {/* Nothing in the loaded window: one empty state with the way out,
+          not a lone "Today" row. */}
+      {!hasEvents && !isLoading && (
+        <EmptyState
+          compact
+          icon={CalendarDays}
+          title={t("events.no_events")}
+          actions={onCreateEvent ? <Button size="sm" onClick={onCreateEvent}>{t("events.new_event")}</Button> : undefined}
+        />
       )}
 
-      {grouped.map((group, index) => {
+      {hasEvents && grouped.map((group, index) => {
         const today = isDisplayToday(group.date);
         const relativeLabel = today
           ? t("events.today_header")
@@ -207,13 +220,13 @@ export function CalendarAgendaView({
             </span>
             <span className="min-w-0 leading-tight">
               <span className={cn(
-                "block text-[11px] font-medium uppercase tracking-wide truncate",
+                "block text-[0.6875rem] font-medium truncate first-letter:uppercase",
                 today ? "text-primary" : "text-muted-foreground",
               )}>
                 {intlFormatter.dateTime(group.date, { month: "short", weekday: "short" })}
               </span>
               {relativeLabel && (
-                <span className={cn("block text-[11px] truncate", today ? "text-primary" : "text-muted-foreground")}>
+                <span className={cn("block text-[0.6875rem] truncate", today ? "text-primary" : "text-muted-foreground")}>
                   {relativeLabel}
                 </span>
               )}
@@ -229,7 +242,7 @@ export function CalendarAgendaView({
             {group.events.map((ev) => {
               const calId = getPrimaryCalendarId(ev);
               const calendar = calId ? calendarMap.get(calId) : undefined;
-              const color = getEventColor(ev, calendar);
+              const color = paint(getEventColor(ev, calendar));
               const start = getEventStartDate(ev);
               const end = getEventEndDate(ev);
               // iTIP CANCEL marks the attendee's copy with status "cancelled"
@@ -252,7 +265,7 @@ export function CalendarAgendaView({
                   style={{ paddingBlock: 'var(--density-item-py)' }}
                 >
                   <span className="w-28 sm:w-32 flex-shrink-0 text-sm text-muted-foreground tabular-nums">
-                    {ev.showWithoutTime ? t("events.all_day") : `${formatTime(start)} – ${formatTime(end)}`}
+                    {ev.showWithoutTime ? t("events.all_day") : <bdi dir="ltr">{`${formatTime(start)} – ${formatTime(end)}`}</bdi>}
                   </span>
 
                   {/* Calendar colour as a dot on the title line; hollow when
@@ -264,13 +277,17 @@ export function CalendarAgendaView({
                   />
 
                   <div className="flex-1 min-w-0">
-                    <div className={cn("text-sm font-medium truncate", isInactive && "line-through text-muted-foreground")}>
-                      {ev.title || t("events.no_title")}
+                    {/* Sized to the title, which keeps its own direction: it sits at
+                        the start of the row and is cut at its own end. */}
+                    <div className="flex min-w-0">
+                      <span dir="auto" className={cn("text-sm font-medium truncate", isInactive && "line-through text-muted-foreground")} title={ev.title || t("events.no_title")}>
+                        {ev.title || t("events.no_title")}
+                      </span>
                     </div>
                     {(meta || getParticipantCount(ev) > 0) && (
                       <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5 min-w-0">
                         {locationName && <MapPin className="w-3 h-3 flex-shrink-0" />}
-                        {meta && <span className="truncate">{meta}</span>}
+                        {meta && <span dir="auto" className="truncate" title={meta}>{meta}</span>}
                         {getParticipantCount(ev) > 0 && (
                           <span className="flex items-center gap-1 flex-shrink-0">
                             <Users className="w-3 h-3" />

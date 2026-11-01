@@ -3,7 +3,9 @@
 import { useTranslations } from 'next-intl';
 import { useThemeStore } from '@/stores/theme-store';
 import { useSettingsStore, type Density } from '@/stores/settings-store';
-import { SettingsSection, SettingItem, RadioGroup, ToggleSwitch } from './settings-section';
+import { SettingsSection, SettingItem, RadioGroup } from './settings-section';
+import { Button } from '@/components/ui/button';
+import { ChevronRight } from '@/components/icons';
 import { ThemesSettings } from './themes-settings';
 import { LayoutSection, SidebarSection, ExperimentalSection } from './layout-settings';
 import { cn } from '@/lib/utils';
@@ -18,6 +20,9 @@ const DENSITY_PREVIEW: Record<Density, { py: string; gap: string; showAvatar: bo
 
 function DensityPreview({ density }: { density: Density }) {
   const cfg = DENSITY_PREVIEW[density];
+  // The list leaves the preview line out when Show preview is off, so the
+  // sample does too.
+  const showPreview = useSettingsStore((state) => state.showPreview) && cfg.showPreview;
   const rows = [
     { unread: true,  sender: 'Alice Johnson',  subject: 'Project update - Q1 roadmap', preview: 'Here are the latest numbers from…' },
     { unread: false, sender: 'Bob Smith',       subject: 'Re: Meeting notes',           preview: 'Thanks, will review and get back...' },
@@ -46,13 +51,13 @@ function DensityPreview({ density }: { density: Density }) {
               <span className={cn("truncate", row.unread ? "font-semibold text-foreground" : "text-muted-foreground")}>
                 {row.sender}
               </span>
-              <span className="text-[10px] text-muted-foreground flex-shrink-0 tabular-nums">12:00</span>
+              <span className="text-[0.625rem] text-muted-foreground flex-shrink-0 tabular-nums">12:00</span>
             </div>
-            <div className={cn("truncate", row.unread ? "font-medium text-foreground" : "text-foreground/80")}>
+            <div className={cn("truncate", row.unread ? "font-medium text-foreground" : "text-foreground")}>
               {row.subject}
             </div>
-            {cfg.showPreview && (
-              <div className="truncate text-muted-foreground/70">{row.preview}</div>
+            {showPreview && (
+              <div className="truncate text-muted-foreground">{row.preview}</div>
             )}
           </div>
         </div>
@@ -69,7 +74,7 @@ function DensityPreview({ density }: { density: Density }) {
 export function AppearanceSettings() {
   const t = useTranslations('settings.appearance');
   const { theme, setTheme } = useThemeStore();
-  const { fontSize, density, animationsEnabled, updateSetting } = useSettingsStore();
+  const { density, updateSetting } = useSettingsStore();
   const { isSettingLocked, isSettingHidden, getColorModePolicy, isFeatureEnabled } = usePolicyStore();
 
   return (
@@ -90,20 +95,6 @@ export function AppearanceSettings() {
       </SettingsSection>
 
       <SettingsSection id="text" title={t('sections.text')}>
-        {!isSettingHidden('fontSize') && (
-        <SettingItem label={t('font_size.label')} description={t('font_size.description')} locked={isSettingLocked('fontSize')}>
-          <RadioGroup
-            value={fontSize}
-            onChange={(value) => updateSetting('fontSize', value as 'small' | 'medium' | 'large')}
-            options={[
-              { value: 'small', label: t('font_size.small') },
-              { value: 'medium', label: t('font_size.medium') },
-              { value: 'large', label: t('font_size.large') },
-            ]}
-          />
-        </SettingItem>
-        )}
-
         {!isSettingHidden('density') && (
         <SettingItem label={t('list_density.label')} description={t('list_density.description')} locked={isSettingLocked('density')}>
           <RadioGroup
@@ -122,14 +113,17 @@ export function AppearanceSettings() {
         </SettingItem>
         )}
 
-        {!isSettingHidden('animationsEnabled') && (
-        <SettingItem label={t('animations.label')} description={t('animations.description')} locked={isSettingLocked('animationsEnabled')}>
-          <ToggleSwitch
-            checked={animationsEnabled}
-            onChange={(checked) => updateSetting('animationsEnabled', checked)}
-          />
+        {/* Text size and motion moved to Settings > Accessibility. */}
+        <SettingItem label={t('accessibility_link.label')} description={t('accessibility_link.description')}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => window.dispatchEvent(new CustomEvent('settings-tab-change', { detail: { tab: 'accessibility', section: 'text' } }))}
+          >
+            {t('accessibility_link.button')}
+            <ChevronRight className="w-4 h-4 ms-1" />
+          </Button>
         </SettingItem>
-        )}
       </SettingsSection>
 
       <LayoutSection />

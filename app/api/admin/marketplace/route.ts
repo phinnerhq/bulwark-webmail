@@ -32,13 +32,17 @@ import {
   directoryJson,
   getDirectoryChannel,
   getDirectoryUrl,
+  directoryOff,
+  DIRECTORY_OFF_MESSAGE,
   installedExtensions,
   installedStateOf,
+  readBundleBytes,
   toListing,
   v2Url,
   type DirectorySummary,
   type DirectoryVersion,
 } from '@/lib/admin/marketplace-directory';
+import { MAX_PLUGIN_SIZE, MAX_THEME_SIZE } from '@/lib/plugin-types';
 import { createHash } from 'node:crypto';
 
 /** Query parameters the UI may pass on to the directory's list endpoint. */
@@ -55,6 +59,9 @@ export async function GET(request: NextRequest) {
   try {
     const result = await requireAdminAuth(request);
     if ('error' in result) return result.error;
+    if (await directoryOff()) {
+      return NextResponse.json({ error: DIRECTORY_OFF_MESSAGE, code: 'no-third-party-traffic' }, { status: 403 });
+    }
 
     const directoryUrl = await getDirectoryUrl();
     const query: Record<string, string | undefined> = {};
@@ -103,6 +110,9 @@ export async function POST(request: NextRequest) {
   try {
     const result = await requireAdminAuth(request);
     if ('error' in result) return result.error;
+    if (await directoryOff()) {
+      return NextResponse.json({ error: DIRECTORY_OFF_MESSAGE, code: 'no-third-party-traffic' }, { status: 403 });
+    }
 
     const ip = getClientIP(request);
     const { slug, version, type, force } = await request.json();
@@ -201,7 +211,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const buffer = await bundleRes.arrayBuffer();
+    const buffer = await readBundleBytes(bundleRes, type === 'theme' ? MAX_THEME_SIZE : MAX_PLUGIN_SIZE);
     const now = new Date().toISOString();
 
     // The directory signs every bundle it approves; refuse one whose
@@ -226,6 +236,8 @@ export async function POST(request: NextRequest) {
     }
 
     const source = { kind: 'marketplace' as const, slug, directoryUrl };
+    // Kept with the install, and so with its rollback copy later.
+    const notes = typeof meta.changelog === 'string' && meta.changelog.trim() ? { changelog: meta.changelog.slice(0, 20_000) } : {};
     const installExtras = {
       signature: signature.status,
       channel: meta.channel,
@@ -272,6 +284,7 @@ export async function POST(request: NextRequest) {
         installedAt: existingTheme?.installedAt ?? now,
         updatedAt: now,
         source,
+        ...notes,
       };
 
       await saveTheme(theme, css, skin);
@@ -347,6 +360,7 @@ export async function POST(request: NextRequest) {
       ...(manifest.locales ? { locales: manifest.locales } : {}),
       ...(manifest.credentials ? { credentials: manifest.credentials } : {}),
       source,
+      ...notes,
     };
 
     await savePlugin(plugin, code);

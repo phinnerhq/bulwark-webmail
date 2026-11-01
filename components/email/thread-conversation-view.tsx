@@ -3,20 +3,37 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
 import DOMPurify from "dompurify";
 import { Email, ThreadGroup } from "@/lib/jmap/types";
-import { EMAIL_SANITIZE_CONFIG, blockExternalResourcesOnNode, collapseBlockedImageContainers, emailIframeCsp, plainTextToSafeHtml, restrictDataUriResourcesOnNode, sanitizeEmailBodyForIframe, sanitizePlainTextRenderedHtml } from "@/lib/email-sanitization";
+import { EMAIL_SANITIZE_CONFIG, TRANSPARENT_BLOCKED_PIXEL, blockExternalResourcesOnNode, collapseBlockedImageContainers, emailIframeCsp, isOpenableLinkHref, plainTextToSafeHtml, restrictDataUriResourcesOnNode, sanitizeEmailBodyForIframe, sanitizePlainTextRenderedHtml } from "@/lib/email-sanitization";
+import { resolveExternalLink } from "@/lib/plugin-hook-result";
+import { stripBidiControls } from "@/lib/bidi";
+import { requestInternalMailto } from "@/lib/protocol-handlers/mailto";
 import { emailDisplayDate } from "@/lib/email-date";
 import { getRenderableHtmlBody } from "@/lib/email-body-selection";
 import { findVerificationCode, verificationCodeBodyText } from "@/lib/verification-code";
 import { VerificationCodeChip } from "./verification-code-chip";
-import { collectReferencedCids, isEmbeddedInBody, normalizeCid } from "@/lib/attachment-visibility";
+import { StructuredMailCards } from "./structured-mail/structured-mail-cards";
+import { BookingCalendarActions } from "./structured-mail/booking-calendar-actions";
+import { useStructuredMail } from "./structured-mail/use-structured-mail";
+import { attachmentIcon } from "./attachment-chips";
+import { ExternalSenderChip } from "./external-sender-chip";
+import { collectReferencedCids, isEmbeddedInBody, isReportPart, normalizeCid, rewriteCidReferences } from "@/lib/attachment-visibility";
 import { collapsePlainTextQuotes, setupQuoteCollapse } from "@/lib/quote-collapse";
 import { fitEmailBodyWidth } from "@/lib/email-fit-width";
+import { mailLanguage } from "@/lib/mail-language";
+import { htmlToReadableText } from "@/lib/html-to-readable-text";
+import { pauseAnimatedImages } from "@/lib/animated-images";
+import { applyMailTextSize, mailFitOptions } from "@/lib/mail-reading";
+import { useMailReading } from "@/hooks/use-mail-reading";
 import { DARK_PENDING_CLASS, applyEmailDarkMode, emailDarkModeCss } from "@/lib/email-dark-mode";
 import { useThemeStore } from "@/stores/theme-store";
 import { useShallow } from "zustand/react/shallow";
 import { Avatar } from "@/components/ui/avatar";
+import { useSenderWarning } from "@/hooks/use-sender-warning";
+import { brandIndicatorDomain } from "@/lib/email-headers";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatFileSize, cn, cleanPreview } from "@/lib/utils";
+import { IconButton } from "@/components/ui/icon-button";
+import { PaneSpinner } from "@/components/ui/spinner";
 import {
   ArrowLeft,
   ChevronDown,
@@ -27,15 +44,10 @@ import {
   Paperclip,
   Star,
   Download,
-  Loader2,
-  FileText,
-  FileImage,
-  FileVideo,
-  FileAudio,
-  FileArchive,
-  File,
   Eye,
+  CalendarClock,
 } from "@/components/icons";
+import { formatScheduledSendAt } from "@/lib/scheduled-send-label";
 import { useTranslations } from "next-intl";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useContactStore } from "@/stores/contact-store";
@@ -46,11 +58,15 @@ import { useWopiStatus, canWopiOpen } from "@/hooks/use-wopi-status";
 import { useOwnDomainAddress } from "@/hooks/use-own-domain-address";
 import { emitThreadExpand } from "@/lib/plugin-thread-expand";
 import { PluginSlot } from "@/components/plugins/plugin-slot";
-import { PluginActions } from "@/components/plugins/plugin-actions";
+import { ReaderSelectionMenu, useReaderSelectionMenu, watchBodySelection } from "./reader-selection-menu";
+import { PluginActions, useMessageActionTarget } from "@/components/plugins/plugin-actions";
 import { usePluginSlotOffers } from "@/hooks/use-plugin-slot-offers";
+import { useDeviceDetection } from "@/hooks/use-media-query";
 import { usePluginRenderedBody } from "@/hooks/use-plugin-rendered-body";
 import { emailToReadView } from "@/lib/plugin-projection";
 import { AttachmentPluginMenu, ReaderAboveQuoteSlot } from "./reader-plugin-surfaces";
+import { useNoThirdPartyTraffic } from "@/hooks/use-third-party-mode";
+import { ConversationHeaderActions, type ConversationActions } from "./conversation-header-actions";
 
 export type ConversationAttachmentHandler = (
   blobId: string, name: string, type: string | undefined, source: EmailBlobContext,
@@ -70,30 +86,12 @@ interface ThreadConversationViewProps {
   onMarkAsRead?: (emailId: string, read: boolean) => void;
   /** Role of the folder the conversation was opened from, for plugin actions limited to some folders. */
   mailboxRole?: string | null;
+  /**
+   * The conversation's actions in the header, on its newest message as the
+   * list row offers them: Archive, Delete, Move and ⋮ with the rest.
+   */
+  actions?: ConversationActions;
 }
-
-// Helper function to get file icon based on mime type or extension
-const getFileIcon = (name?: string, type?: string) => {
-  const ext = name?.split('.').pop()?.toLowerCase();
-  const mimeType = type?.toLowerCase();
-
-  if (mimeType?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp'].includes(ext || '')) {
-    return FileImage;
-  }
-  if (mimeType?.startsWith('video/') || ['mp4', 'avi', 'mov', 'wmv'].includes(ext || '')) {
-    return FileVideo;
-  }
-  if (mimeType?.startsWith('audio/') || ['mp3', 'wav', 'ogg', 'flac'].includes(ext || '')) {
-    return FileAudio;
-  }
-  if (mimeType === 'application/pdf' || ext === 'pdf') {
-    return FileText;
-  }
-  if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext || '')) {
-    return FileArchive;
-  }
-  return File;
-};
 
 /**
  * Whether a conversation message may load remote content: the user's policy,
@@ -108,6 +106,8 @@ export function useConversationExternalContent() {
   const addToTrustedSendersBook = useContactStore((state) => state.addToTrustedSendersBook);
   const { client } = useAuthStore(useShallow((state) => ({ client: state.client })));
   const [allowedIds, setAllowedIds] = useState<Set<string>>(new Set());
+  // No third-party traffic (#903): nothing remote loads and nothing offers to.
+  const remoteBlockedByOrg = useNoThirdPartyTraffic();
 
   const allow = useCallback((emailId: string) => {
     setAllowedIds(prev => new Set(prev).add(emailId));
@@ -118,12 +118,13 @@ export function useConversationExternalContent() {
     const senderIsTrusted = senderEmail
       ? isSenderTrusted(senderEmail) || (trustedSendersAddressBook && isTrustedAddressBookSender(senderEmail))
       : false;
+    if (remoteBlockedByOrg) return false;
     return externalContentPolicy === 'allow' || !!senderIsTrusted || allowedIds.has(email.id);
   };
 
   const trustSender = (email: Email) => {
     const senderEmail = email.from?.[0]?.email?.toLowerCase();
-    if (!senderEmail) return undefined;
+    if (!senderEmail || remoteBlockedByOrg) return undefined;
     return () => {
       if (trustedSendersAddressBook && client) {
         addToTrustedSendersBook(client, senderEmail).catch(console.error);
@@ -186,13 +187,15 @@ export function ThreadConversationView({
   blobSource,
   onMarkAsRead,
   mailboxRole,
+  actions,
 }: ThreadConversationViewProps) {
   const t = useTranslations();
   const externalContent = useConversationExternalContent();
   const emailIdList = emails.map((email) => email.id).join(',');
+  const { isMobile: summaryOnPhone, isTablet: summaryOnTablet } = useDeviceDetection();
   const threadSummaryProps = useMemo(
-    () => ({ threadId: thread.latestEmail.threadId ?? null, emailIds: emailIdList ? emailIdList.split(',') : [] }),
-    [thread.latestEmail.threadId, emailIdList],
+    () => ({ threadId: thread.latestEmail.threadId ?? null, emailIds: emailIdList ? emailIdList.split(',') : [], deviceType: summaryOnPhone ? 'mobile' : summaryOnTablet ? 'tablet' : 'desktop' }),
+    [thread.latestEmail.threadId, emailIdList, summaryOnPhone, summaryOnTablet],
   );
 
   // Track which emails are expanded (most recent by default)
@@ -232,36 +235,27 @@ export function ThreadConversationView({
   };
 
   if (isLoading) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">{t("threads.loading")}</p>
-        </div>
-      </div>
-    );
+    // One centred spinner for a whole pane (R9).
+    return <PaneSpinner label={t("threads.loading")} className="bg-background" />;
   }
 
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Header */}
       <div className="flex items-center px-4 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 sticky top-0 z-10" style={{ gap: 'var(--density-item-gap)', paddingBlock: 'var(--density-header-py)' }}>
-        <button
-          onClick={onBack}
-          className="p-2 -ms-2 rounded-full hover:bg-muted transition-colors"
-          aria-label={t('email_viewer.back_to_list')}
-          title={t('email_viewer.back_to_list')}
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
+        <IconButton size="icon-lg" className="-ms-2 flex-shrink-0" onClick={onBack} label={t('email_viewer.back_to_list')}>
+          <ArrowLeft />
+        </IconButton>
         <div className="flex-1 min-w-0">
-          <h1 className="font-semibold text-foreground break-words">
+          {/* Two lines at most, so a long subject leaves the actions their room. */}
+          <h2 className="font-semibold text-foreground break-words line-clamp-2" dir="auto" title={thread.latestEmail.subject || undefined}>
             {thread.latestEmail.subject || t("email_viewer.no_subject")}
-          </h1>
+          </h2>
           <p className="text-sm text-muted-foreground">
-            {t("threads.messages_other", { count: emails.length })}
+            {t("threads.messages_count", { count: emails.length })}
           </p>
         </div>
+        {actions && <ConversationHeaderActions email={thread.latestEmail} actions={actions} />}
       </div>
 
       {/* Email Cards */}
@@ -324,9 +318,12 @@ function useConversationPluginProps(email: Email) {
   const belowSubjectOffers = usePluginSlotOffers('reader-below-subject').length;
   const bannerOffers = usePluginSlotOffers('email-banner').length;
   const wantsView = headerOffers + belowSubjectOffers + bannerOffers > 0;
-  const emailProps = useMemo(() => ({ email: wantsView ? emailToReadView(email) : null }), [email, wantsView]);
+  const { isMobile, isTablet } = useDeviceDetection();
+  const deviceType = isMobile ? 'mobile' : isTablet ? 'tablet' : 'desktop';
+  const emailProps = useMemo(() => ({ email: wantsView ? emailToReadView(email) : null, deviceType }), [email, wantsView, deviceType]);
   const idProps = useMemo(() => ({ emailId: email.id }), [email.id]);
-  return { emailProps, idProps };
+  const actionTarget = useMessageActionTarget(email);
+  return { emailProps, idProps, actionTarget };
 }
 
 function EmailCard({
@@ -347,8 +344,10 @@ function EmailCard({
 }: EmailCardProps) {
   const t = useTranslations();
   const density = useSettingsStore((state) => state.density);
+  const timeFormat = useSettingsStore((state) => state.timeFormat);
   const plugin = useConversationPluginProps(email);
   const sender = email.from?.[0];
+  const senderWarning = useSenderWarning(email);
   const formatAddress = useOwnDomainAddress();
   const isUnread = !email.keywords?.$seen;
   const isStarred = email.keywords?.$flagged;
@@ -360,12 +359,13 @@ function EmailCard({
     <div className={cn(
       "rounded-lg border border-border overflow-hidden transition-all duration-200",
       isExpanded ? "bg-background shadow-sm" : "bg-muted/30",
-      isUnread && !isExpanded && "border-s-2 border-l-primary"
+      isUnread && !isExpanded && "start-bar border-s-transparent [--start-bar-width:2px] [--start-bar:var(--color-primary)]"
     )}>
       {isExpanded && <PluginSlot name="reader-header" className="w-full" extraProps={plugin.emailProps} />}
       {/* Card Header - Always visible */}
       <button
         onClick={onToggleExpanded}
+        aria-expanded={isExpanded}
         className={cn(
           "w-full flex items-start text-start transition-colors",
           !isExpanded && "hover:bg-muted/50"
@@ -378,16 +378,25 @@ function EmailCard({
             email={sender?.email}
             size="md"
             className="flex-shrink-0"
+            senderWarning={senderWarning}
+            brandDomain={brandIndicatorDomain(email)}
           />
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
-            <span className={cn(
+            <span dir="auto" className={cn(
               "font-medium truncate",
               isUnread ? "text-foreground" : "text-muted-foreground"
             )}>
-              {sender?.name || (sender?.email && formatAddress(sender.email)) || "Unknown"}
+              {sender?.name || (sender?.email && formatAddress(sender.email)) || t('email_viewer.unknown_sender')}
             </span>
+            <ExternalSenderChip from={email.from} accountId={email.sourceClientAccountId} interactive={false} />
+            {email.isScheduled && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary shrink-0">
+                <CalendarClock className="w-3.5 h-3.5" />
+                {t('sidebar.scheduled')}
+              </span>
+            )}
             {isStarred && (
               <Star className="w-4 h-4 fill-amber-400 text-amber-400 flex-shrink-0" />
             )}
@@ -396,10 +405,17 @@ function EmailCard({
             )}
           </div>
           <div className="text-sm text-muted-foreground">
-            {formatDate(emailDisplayDate(email))}
+            {email.isScheduled && email.scheduledSendAt ? (
+              <span className="text-primary font-medium inline-flex items-center gap-1">
+                <CalendarClock className="w-3.5 h-3.5" />
+                {formatScheduledSendAt(email.scheduledSendAt, timeFormat)}
+              </span>
+            ) : (
+              formatDate(emailDisplayDate(email))
+            )}
           </div>
           {!isExpanded && density !== 'extra-compact' && (
-            <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+            <p dir="auto" className="text-sm text-muted-foreground mt-1 line-clamp-2">
               {cleanPreview(email.preview) || t('email_viewer.no_preview_available')}
             </p>
           )}
@@ -416,6 +432,14 @@ function EmailCard({
       {/* Expanded Content */}
       {isExpanded && (
         <div className="border-t border-border animate-in slide-in-from-top-2 duration-200">
+          {email.isScheduled && (
+            <div className="px-4 py-2 bg-primary/10 border-b border-border flex items-center gap-2 text-primary text-xs font-medium">
+              <CalendarClock className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                {t('email_viewer.scheduled_banner', { date: email.scheduledSendAt ? formatScheduledSendAt(email.scheduledSendAt, timeFormat) : '' })}
+              </span>
+            </div>
+          )}
           <PluginSlot name="reader-below-subject" className="w-full" extraProps={plugin.emailProps} />
           <PluginSlot name="email-banner" className="w-full" extraProps={plugin.emailProps} />
           <ConversationEmailBody
@@ -429,8 +453,9 @@ function EmailCard({
           <PluginSlot name="email-footer" className="w-full" extraProps={plugin.idProps} />
 
           {/* Action Buttons; plugin reader actions behind a "more" button, as
-              in the single reader's More panel on phones. */}
-          <div className="px-4 pb-4 flex gap-2">
+              in the single reader's More panel on phones. Long names (Arabic
+              "Reply all") wrap to a second line instead of being cut. */}
+          <div className="px-4 pb-4 flex flex-wrap gap-2">
             {onReply && (
               <Button
                 variant="outline"
@@ -439,10 +464,10 @@ function EmailCard({
                   e.stopPropagation();
                   onReply();
                 }}
-                className="flex-1 min-w-0 px-2 whitespace-nowrap"
+                className="flex-auto px-2 whitespace-nowrap"
               >
                 <Reply className="w-4 h-4 me-1.5 shrink-0" />
-                <span className="truncate">{t("email_viewer.reply")}</span>
+                {t("email_viewer.reply")}
               </Button>
             )}
             {onReplyAll && (
@@ -453,10 +478,10 @@ function EmailCard({
                   e.stopPropagation();
                   onReplyAll();
                 }}
-                className="flex-1 min-w-0 px-2 whitespace-nowrap"
+                className="flex-auto px-2 whitespace-nowrap"
               >
                 <ReplyAll className="w-4 h-4 me-1.5 shrink-0" />
-                <span className="truncate">{t("email_viewer.reply_all")}</span>
+                {t("email_viewer.reply_all")}
               </Button>
             )}
             {onForward && (
@@ -467,15 +492,16 @@ function EmailCard({
                   e.stopPropagation();
                   onForward();
                 }}
-                className="flex-1 min-w-0 px-2 whitespace-nowrap"
+                className="flex-auto px-2 whitespace-nowrap"
               >
                 <Forward className="w-4 h-4 me-1.5 shrink-0" />
-                <span className="truncate">{t("email_viewer.forward")}</span>
+                {t("email_viewer.forward")}
               </Button>
             )}
             <PluginActions
               surface="reader-actions"
               context={plugin.idProps}
+              target={plugin.actionTarget}
               mailboxRole={mailboxRole ?? null}
               overflow
               className="flex-shrink-0 rounded-md border border-border"
@@ -515,14 +541,19 @@ export function ConversationEmailBody({
   bodyStyle,
   className,
 }: ConversationEmailBodyProps) {
+  const remoteBlockedByOrg = useNoThirdPartyTraffic();
   const t = useTranslations();
   const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
   const mailAttachmentAction = useSettingsStore((state) => state.mailAttachmentAction);
   const wopiStatus = useWopiStatus(true);
   const hideInlineImageAttachments = useSettingsStore((state) => state.hideInlineImageAttachments);
   const emailAlwaysLightMode = useSettingsStore((state) => state.emailAlwaysLightMode);
-  const isDark = resolvedTheme === 'dark' && !emailAlwaysLightMode;
   const plainTextFont = useSettingsStore((state) => state.plainTextFont);
+  const reading = useMailReading();
+  // No dark recolouring in a forced-colours mode: the browser maps the mail
+  // to the user's colours itself.
+  const isDark = resolvedTheme === 'dark' && !emailAlwaysLightMode && !reading.forcedColors && !reading.overrideStyles;
+  const appFontSources = reading.fontSources.join(' ');
   const showVerificationCodes = useSettingsStore((state) => state.showVerificationCodes);
   const verificationCode = useMemo(
     () => (showVerificationCodes ? findVerificationCode(email.subject, verificationCodeBodyText(email)) : null),
@@ -537,6 +568,8 @@ export function ConversationEmailBody({
   const fallbackSource = useEmailStore(useShallow(() => resolveEmailBlobContext(email, client)));
   const source = blobSource ?? fallbackSource;
   const { client: blobClient, accountId } = source;
+  // Booking, parcel and order cards; only an expanded message mounts this body.
+  const structuredCards = useStructuredMail(email, source);
   // Local CID URLs belong to a particular client/owner/message/part list.
   // Hide the previous set during render, before the new fetch's effect runs.
   const cidRequest = useMemo(() => ({ blobClient, accountId, emailId: email.id, attachments: email.attachments }),
@@ -548,6 +581,7 @@ export function ConversationEmailBody({
   // reader-above-quote: the body the quote was collapsed in, once it is on screen.
   const [htmlBodyEl, setHtmlBodyEl] = useState<HTMLElement | null>(null);
   const [plainBodyEl, setPlainBodyEl] = useState<HTMLDivElement | null>(null);
+  const selectionMenu = useReaderSelectionMenu();
   const wantsQuoteSlot = usePluginSlotOffers('reader-above-quote').length > 0;
   const quoteSlotProps = useMemo(
     () => ({ email: wantsQuoteSlot ? emailToReadView(email) : null }),
@@ -602,16 +636,13 @@ export function ConversationEmailBody({
   }, [cidRequest, blobClient, accountId]);
 
   // Sanitize and prepare email HTML content
-  const emailContent = useMemo(() => {
+  const formattedContent = useMemo(() => {
     if (!email) return { html: "", isHtml: false };
 
     // Plugin-rendered bodies get the reader's sanitizer and remote-content
     // blocking, like any other mail body (#797).
     if (pluginBody.html) {
-      const withCids = pluginBody.html.replace(
-        /\bcid:([^"'\s)]+)/gi,
-        (_match, cidRef) => pluginBody.cidUrls[cidRef] || cidBlobUrls[cidRef] || 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
-      );
+      const withCids = rewriteCidReferences(pluginBody.html, { ...cidBlobUrls, ...pluginBody.cidUrls }, TRANSPARENT_BLOCKED_PIXEL);
       const { html, blockedExternalContent } = sanitizeEmailBodyForIframe(withCids, !allowExternal);
       if (blockedExternalContent) {
         if (!hasBlockedContent) setHasBlockedContent(true);
@@ -636,12 +667,7 @@ export function ConversationEmailBody({
         // Replace cid: references with authenticated blob URLs (fetched via useEffect)
         // This prevents browser auth dialogs that occur when loading raw JMAP download URLs
         if (email.attachments) {
-          htmlContent = htmlContent.replace(
-            /\bcid:([^"'\s)]+)/gi,
-            (_match, cidRef) => {
-              return cidBlobUrls[cidRef] || 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-            }
-          );
+          htmlContent = rewriteCidReferences(htmlContent, cidBlobUrls, TRANSPARENT_BLOCKED_PIXEL);
         }
 
         let blockedExternalContent = false;
@@ -707,11 +733,31 @@ export function ConversationEmailBody({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [email, allowExternal, cidBlobUrls, pluginBody, t]);
 
+  // "Show mail as plain text" (Settings > Accessibility): the message's own
+  // text/plain part, or a readable conversion of the HTML.
+  const mailViewMode = useSettingsStore((state) => state.mailViewMode);
+  const emailContent = useMemo(() => {
+    if (mailViewMode !== 'plain' || !formattedContent.isHtml) return formattedContent;
+    const textPart = !pluginBody.html ? email.textBody?.[0] : undefined;
+    let text = textPart?.partId && textPart.partId !== email.htmlBody?.[0]?.partId && (textPart.type || 'text/plain').toLowerCase() === 'text/plain'
+      ? email.bodyValues?.[textPart.partId]?.value ?? null
+      : null;
+    if (!text?.trim()) text = htmlToReadableText(formattedContent.html);
+    return {
+      html: collapsePlainTextQuotes(plainTextToSafeHtml(text, 'text-primary hover:underline'), {
+        show: t('email_viewer.show_quoted_text'),
+        hide: t('email_viewer.hide_quoted_text'),
+      }),
+      isHtml: false,
+    };
+  }, [mailViewMode, formattedContent, pluginBody.html, email, t]);
+
   // Parts the body embeds via cid: stay out of the attachment row while the
   // user hides inline images - the desktop viewer's rule, shared through
-  // lib/attachment-visibility.ts so the two views cannot drift apart.
+  // lib/attachment-visibility.ts so the two views cannot drift apart. The
+  // report parts of a bounce or read receipt never show.
   const visibleAttachments = useMemo(() => {
-    const attachments = email.attachments ?? [];
+    const attachments = (email.attachments ?? []).filter(att => !isReportPart(att.type));
     if (!hideInlineImageAttachments) return attachments;
     const bodyCids = collectReferencedCids(getRenderableHtmlBody(email));
     return attachments.filter(att => !isEmbeddedInBody(att, bodyCids));
@@ -722,13 +768,20 @@ export function ConversationEmailBody({
   // the host page. CSP <meta> is defense-in-depth in case the sanitizer ever
   // emits a <script> tag through a parser quirk.
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  // The body's language for screen readers (see mailLanguage), and a frame
+  // title that tells this message from the others in the conversation.
+  const bodyLanguage = useMemo(() => mailLanguage(email, getRenderableHtmlBody(email)), [email]);
+  const frameSender = email.from?.[0];
+  const frameTitle = email.subject
+    ? t('email_viewer.frame_title', { subject: email.subject })
+    : t('email_viewer.frame_title_from', { sender: frameSender?.name || frameSender?.email || t('email_viewer.unknown_sender') });
   const emailIframeSrcDoc = useMemo(() => {
     if (!emailContent.isHtml || !emailContent.html) return '';
     // Strict while external content is blocked: the network-level backstop
     // for whatever the DOM walk above cannot see.
-    const csp = emailIframeCsp(!allowExternal);
+    const csp = emailIframeCsp(!allowExternal, appFontSources ? appFontSources.split(' ') : []);
     // Colours are rewritten after load (applyEmailDarkMode in handleIframeLoad).
-    return `<!DOCTYPE html><html class="${isDark ? DARK_PENDING_CLASS : ''}"><head>
+    return `<!DOCTYPE html><html${bodyLanguage ? ` lang="${bodyLanguage}"` : ''} data-reading="${reading.frameKey}" class="${isDark ? DARK_PENDING_CLASS : ''}"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
@@ -739,7 +792,7 @@ export function ConversationEmailBody({
      on a phone fitEmailBodyWidth() shrinks it to the screen first, so the pan is
      only left for content too wide to stay legible when scaled. */
   html { overflow: hidden; }
-  body { overflow-x: auto; overflow-y: hidden; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; line-height: 1.6; color: #1a1a1a; background: #ffffff; word-wrap: break-word; overflow-wrap: break-word; }
+  body { overflow-x: auto; overflow-y: hidden; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 0.875rem; line-height: 1.6; color: #1a1a1a; background: #ffffff; word-wrap: break-word; overflow-wrap: break-word; }
   /* Only force the cap on images that set no width of their own: an
      !important 100% also overrides a sender's inline max-width, and an
      image sized by max-width + max-height + width:100% then grows to
@@ -759,8 +812,8 @@ export function ConversationEmailBody({
   td, th { word-break: break-word; padding: 0.5rem; }
   pre { white-space: pre-wrap; word-wrap: break-word; }
   ${isDark ? emailDarkModeCss() : ''}
-</style></head><body dir="auto">${emailContent.html}</body></html>`;
-  }, [emailContent.isHtml, emailContent.html, allowExternal, isDark]);
+</style></head><body dir="auto">${emailContent.html}${reading.frameCss ? `<style>${reading.frameCss}</style>` : ''}</body></html>`;
+  }, [emailContent.isHtml, emailContent.html, allowExternal, isDark, bodyLanguage, reading.frameKey, reading.frameCss, appFontSources]);
   useLayoutEffect(() => { setHtmlBodyEl(null); }, [emailIframeSrcDoc]);
   // One object per body: React writes innerHTML again whenever this object
   // changes, dropping whatever was mounted in the body.
@@ -781,11 +834,23 @@ export function ConversationEmailBody({
         show: t('email_viewer.show_quoted_text'),
         hide: t('email_viewer.hide_quoted_text'),
       });
+      // Text size and minimum size, before the first resize.
+      applyMailTextSize(doc, {
+        factor: reading.textFactor,
+        minPx: reading.minFontSize,
+        unjustify: reading.overrideStyles,
+        sizesFromCss: reading.overrideStyles,
+      });
+      // Before the link handling: a Play button inside a link must not open it.
+      if (reading.pauseImages) {
+        pauseAnimatedImages(doc, { play: t('email_viewer.play_animation'), pause: t('email_viewer.pause_animation') });
+      }
       if (isDark) applyEmailDarkMode(doc, { remoteContentAllowed: allowExternal });
       const resize = () => {
         // Fit desktop-width mail to the screen before measuring: the transform
         // leaves the layout height untouched, so scale the box by hand.
-        const scale = fitEmailBodyWidth(doc);
+        // Phones always; any screen with "Fit wide mail" on.
+        const scale = fitEmailBodyWidth(doc, reading.fitWidth ? mailFitOptions(true, true) : {});
         const height = Math.max(doc.documentElement.scrollHeight, doc.body.scrollHeight);
         iframe.style.height = Math.ceil(height * scale) + 'px';
       };
@@ -796,20 +861,46 @@ export function ConversationEmailBody({
         a.setAttribute('target', '_blank');
         a.setAttribute('rel', 'noopener noreferrer');
       });
+      // The reader's link gate (email-viewer handleIframeLoad): web links go
+      // through onBeforeExternalLink, and nothing resolving inside our own
+      // origin (a relative path, data:) is opened. mailto: is written here
+      // when the mail page takes it; the blob: URLs of cid: parts are inert.
+      doc.addEventListener('click', (ev) => {
+        const link = (ev.target as Element | null)?.closest?.('a[href], area[href]');
+        if (!link) return;
+        const href = link.getAttribute('href') || '';
+        if (!href || href.startsWith('#') || href.startsWith('blob:')) return;
+        if (/^mailto:/i.test(href)) {
+          if (requestInternalMailto(href)) ev.preventDefault();
+          return;
+        }
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (!isOpenableLinkHref(href)) return;
+        void resolveExternalLink({ href, target: link.getAttribute('target') ?? undefined, emailId: email.id })
+          .then((target) => { if (target) window.open(target, '_blank', 'noopener,noreferrer'); });
+      }, true);
+      // Selected text: the onTextSelectionChange hook and the right-click
+      // menu plugins may add entries to.
+      watchBodySelection(doc, iframe, {
+        emailId: email.id,
+        onContextMenu: (point, text) => selectionMenu.openRef.current(point, { emailId: email.id, text }),
+      });
       setHtmlBodyEl(doc.body);
     } catch {
       // contentDocument may be inaccessible under stricter sandboxes; ignore.
     }
-  }, [t, isDark, allowExternal]);
+  }, [t, isDark, allowExternal, email.id, selectionMenu.openRef, reading.textFactor, reading.minFontSize, reading.overrideStyles, reading.fitWidth, reading.pauseImages]);
 
   return (
     <div className={className}>
       {/* External content warning */}
-      {hasBlockedContent && !allowExternal && (
-        <div className="px-4 py-2 bg-muted/50 flex items-center justify-between text-sm">
+      {hasBlockedContent && !allowExternal && emailContent.isHtml && (
+        <div className="px-4 py-2 bg-muted/50 flex items-center justify-between text-sm" data-testid="external-content-notice">
           <span className="text-muted-foreground">
-            {t("email_viewer.external_content_warning")}
+            {remoteBlockedByOrg ? t("third_party.remote_content_blocked") : t("email_viewer.external_content_warning")}
           </span>
+          {!remoteBlockedByOrg && (
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
@@ -834,12 +925,27 @@ export function ConversationEmailBody({
               </Button>
             )}
           </div>
+          )}
         </div>
       )}
 
       {verificationCode && (
         <div className="flex" style={{ paddingInline: 'var(--density-card-p)', paddingTop: 'var(--density-card-p)' }}>
           <VerificationCodeChip code={verificationCode} className="py-1 text-sm" />
+        </div>
+      )}
+
+      {structuredCards.length > 0 && (
+        // Aligned with the body: its own padding on the phone card, the
+        // caller's (className) in Mountain View.
+        <div style={bodyStyle ? { paddingTop: '0.5rem', paddingBottom: '0.25rem' } : { paddingInline: 'var(--density-card-p)', paddingTop: 'var(--density-card-p)' }}>
+          {/* No product images when the mail is shown as plain text. */}
+          <StructuredMailCards
+            cards={structuredCards}
+            email={email}
+            allowRemoteImages={allowExternal && mailViewMode !== 'plain'}
+            calendarActions={(booking) => <BookingCalendarActions booking={booking} email={email} />}
+          />
         </div>
       )}
 
@@ -850,7 +956,7 @@ export function ConversationEmailBody({
             ref={iframeRef}
             srcDoc={emailIframeSrcDoc}
             sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-            title="Email content"
+            title={frameTitle}
             className="w-full border-0 block"
             scrolling="no"
             style={{ minHeight: '60px' }}
@@ -859,6 +965,10 @@ export function ConversationEmailBody({
         ) : (
           <div
             ref={setPlainBodyEl}
+            // Its own direction, as in the reader: English text in an Arabic
+            // UI read "1+" and ".change".
+            dir="auto"
+            lang={bodyLanguage ?? undefined}
             className={cn(
               "prose prose-sm max-w-none",
               !emailAlwaysLightMode && "dark:prose-invert",
@@ -867,10 +977,14 @@ export function ConversationEmailBody({
               "[&_table]:border-collapse [&_td]:p-2 [&_th]:p-2",
               "[&_img]:max-w-full [&_img]:h-auto"
             )}
-            style={{ whiteSpace: 'pre-wrap', ...(plainTextFont === 'mono' && { fontFamily: 'ui-monospace, "SF Mono", Consolas, monospace' }), fontSize: '13px' }}
+            style={{ whiteSpace: 'pre-wrap', ...(plainTextFont === 'mono' && { fontFamily: 'ui-monospace, "SF Mono", Consolas, monospace' }), fontSize: reading.plainFontSize(13), ...(reading.comfortableWidth && { maxWidth: '80ch' }) }}
+            data-plugin-source="email-body"
+            data-email-id={email.id}
+            onContextMenu={(e) => selectionMenu.onElementContextMenu(e, email.id)}
             dangerouslySetInnerHTML={plainBodyHtml}
           />
         )}
+        <ReaderSelectionMenu menu={selectionMenu} />
         <ReaderAboveQuoteSlot
           root={emailContent.isHtml ? htmlBodyEl : plainBodyEl}
           frame={emailContent.isHtml ? iframeRef.current : null}
@@ -884,7 +998,7 @@ export function ConversationEmailBody({
         <div className="px-4 pb-4">
           <div className="flex flex-wrap gap-2">
             {visibleAttachments.map((attachment, idx) => {
-              const Icon = getFileIcon(attachment.name, attachment.type);
+              const { icon: Icon, className: iconClass } = attachmentIcon(attachment.type, attachment.name);
               const isPreviewable = isFilePreviewable(attachment.name, attachment.type)
                 || (!!attachment.blobId && canWopiOpen(wopiStatus, attachment.name));
               const opensPreview = isPreviewable && mailAttachmentAction === 'preview';
@@ -898,8 +1012,11 @@ export function ConversationEmailBody({
                   title={opensPreview ? t('files.preview') : t('email_viewer.download')}
                   className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted hover:bg-muted/80 transition-colors text-sm"
                 >
-                  <Icon className="w-4 h-4 text-muted-foreground" />
-                  <span className="truncate max-w-[150px]">{attachment.name || 'Attachment'}</span>
+                  <Icon className={cn("w-4 h-4", iconClass)} />
+                  {/* The action, for screen readers: the visible name alone
+                      doesn't say whether the button previews or downloads. */}
+                  <span className="sr-only">{opensPreview ? t('files.preview') : t('email_viewer.download')}</span>{' '}
+                  <span className="truncate max-w-[150px]">{attachment.name ? stripBidiControls(attachment.name) : 'Attachment'}</span>
                   <span className="text-muted-foreground text-xs">
                     {formatFileSize(attachment.size)}
                   </span>

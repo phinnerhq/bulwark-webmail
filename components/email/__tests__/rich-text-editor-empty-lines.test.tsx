@@ -19,8 +19,13 @@ async function setup(content: string) {
   return editor as unknown as Editor;
 }
 
-// The composer marks every block dir="auto"; that's not what these tests are about.
-const serialize = (editor: Editor) => serializeEditorContent(editor).replace(/ dir="auto"/g, '');
+// The composer marks every block dir="auto" and inlines the paragraph margin -
+// its own (#1340) or the one a loaded message brought along (#1416); neither is
+// what these tests are about.
+const serialize = (editor: Editor) => serializeEditorContent(editor)
+  .replace(/ dir="auto"/g, '')
+  .replace(/ style="margin: ?\d+(?:px)? 0(?:px)?;"/g, '')
+  .replace(/ style="margin: ?1em 0(?:px)?;"/g, '');
 
 // Re-open what was saved, the way a draft or a signature swap does.
 function reload(editor: Editor, html: string) {

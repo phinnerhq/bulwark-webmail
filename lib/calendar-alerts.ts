@@ -69,6 +69,12 @@ export function computeFireTime(
   return baseTime + offsetMs;
 }
 
+/**
+ * The alerts an event fires: the calendar's default alerts while the event
+ * uses them, its own otherwise - never both. Stalwart 1.0 also fills the
+ * defaults into the `alerts` of such an event, under the default alerts'
+ * ids; reading one or the other keeps each alert firing once.
+ */
 export function getEffectiveAlerts(
   event: CalendarEvent,
   calendars: Calendar[]
@@ -187,18 +193,24 @@ export function alertsToRows(alerts: Record<string, CalendarEventAlert> | null |
   return { rows, preserved };
 }
 
-/** Builds the alert map to save from the rows plus the preserved alerts. */
+/**
+ * Builds the alert map to save from the rows plus the preserved alerts.
+ * New alerts get the ids `${prefix}1`, `${prefix}2`, ..., skipping the ids in
+ * `taken` and those of the preserved alerts.
+ */
 export function rowsToAlerts(
   rows: AlertRow[],
-  preserved: Record<string, CalendarEventAlert> = {}
+  preserved: Record<string, CalendarEventAlert> = {},
+  { prefix = 'alert', taken = [] }: { prefix?: string; taken?: Iterable<string> } = {}
 ): Record<string, CalendarEventAlert> {
   const built: Record<string, CalendarEventAlert> = { ...preserved };
+  const used = new Set(taken);
   let idx = 0;
   for (const row of rows) {
     const offset = alertRowToOffset(row);
     if (offset === null) continue;
-    let key = `alert${++idx}`;
-    while (key in built) key = `alert${++idx}`;
+    let key = `${prefix}${++idx}`;
+    while (key in built || used.has(key)) key = `${prefix}${++idx}`;
     built[key] = {
       '@type': 'Alert',
       trigger: { '@type': 'OffsetTrigger', offset, relativeTo: 'start' },
@@ -212,6 +224,30 @@ export function rowsToAlerts(
 
 export function buildAlertKey(eventId: string, alertId: string, fireTimeMs: number): string {
   return `${eventId}:${alertId}:${fireTimeMs}`;
+}
+
+/**
+ * `alerts` under new ids (alert1, alert2, ...), none of them in `taken`.
+ *
+ * For an event or task that turns its calendar's default alerts off: while
+ * `useDefaultAlerts` is on, Stalwart 1.0 shows the defaults in `alerts`
+ * under the default alerts' ids, and on save it drops every alert whose id
+ * is one of those. Alerts the user keeps have to be saved under ids of their
+ * own, or they vanish with the defaults.
+ */
+export function withOwnAlertIds(
+  alerts: CalendarEventAlert[],
+  taken: Iterable<string>,
+): Record<string, CalendarEventAlert> {
+  const used = new Set(taken);
+  const result: Record<string, CalendarEventAlert> = {};
+  let n = 0;
+  for (const alert of alerts) {
+    let id: string;
+    do id = `alert${++n}`; while (used.has(id));
+    result[id] = alert;
+  }
+  return result;
 }
 
 export function getPendingAlerts(
@@ -255,6 +291,39 @@ export function getPendingAlerts(
   return pending;
 }
 
+/**
+ * When the next display alert of these events and tasks fires, after `now`;
+ * null when none is still to come. Lets the reminder check wake up at that
+ * moment instead of on its next periodic tick (#1349).
+ */
+export function getNextAlertFireTime(
+  events: CalendarEvent[],
+  tasks: CalendarTask[],
+  calendars: Calendar[],
+  now: number
+): number | null {
+  const fireTimes: number[] = [];
+  for (const event of events) {
+    if (event.status === 'cancelled') continue;
+    const alerts = getEffectiveAlerts(event, calendars);
+    if (!alerts) continue;
+    for (const alert of Object.values(alerts)) {
+      if (alert.action !== 'display' || alert.acknowledged) continue;
+      const fireTimeMs = computeFireTime(event, alert.trigger);
+      if (fireTimeMs !== null && fireTimeMs > now) fireTimes.push(fireTimeMs);
+    }
+  }
+  for (const task of tasks) {
+    if (!task.alerts || task.progress === 'completed' || task.progress === 'cancelled') continue;
+    for (const alert of Object.values(task.alerts)) {
+      if (alert.action !== 'display' || alert.acknowledged) continue;
+      const fireTimeMs = computeTaskFireTime(task, alert.trigger);
+      if (fireTimeMs !== null && fireTimeMs > now) fireTimes.push(fireTimeMs);
+    }
+  }
+  return fireTimes.length > 0 ? fireTimes.reduce((a, b) => Math.min(a, b)) : null;
+}
+
 export interface PendingTaskAlert {
   taskId: string;
   alertId: string;
@@ -275,8 +344,11 @@ export function computeTaskFireTime(
   const offsetMs = parseAlertOffset(trigger.offset);
   if (offsetMs === null) return null;
 
-  if (!task.due) return null;
-  const baseTime = new Date(task.due).getTime();
+  // RFC 8984 §4.5.2: relativeTo defaults to "start", which for a Task is its
+  // start; "end" is its due. A task without a start counts from its due (#1328).
+  const base = trigger.relativeTo !== 'end' && task.start ? task.start : task.due;
+  if (!base) return null;
+  const baseTime = new Date(base).getTime();
   if (Number.isNaN(baseTime)) return null;
   return baseTime + offsetMs;
 }

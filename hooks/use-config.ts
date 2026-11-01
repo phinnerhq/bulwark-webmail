@@ -7,6 +7,7 @@ import type { PublicJmapServerEntry } from '@/lib/admin/jmap-servers';
 import { IS_LITE, IS_LITE_STALWART, LITE_CONFIG_PATH, withLiteBuildId } from '@/lib/lite';
 import { applyLiteConfig, liteStalwartDefaults } from '@/lib/lite-config';
 import { isConfigData } from '@/lib/config-validation';
+import { setNoThirdPartyTraffic } from '@/lib/third-party-mode';
 
 export interface ConfigData {
   appName: string;
@@ -30,6 +31,7 @@ export interface ConfigData {
   loginImprintUrl: string;
   loginPrivacyPolicyUrl: string;
   loginWebsiteUrl: string;
+  loginUsernamePlaceholder: string;
   loginLogoMaxHeight: string;
   loginLogoMaxWidth: string;
   loginShowHeading: boolean;
@@ -48,6 +50,16 @@ export interface ConfigData {
   sourceCodeUrl: string;
   /** Domain of masked addresses, or '' when they are not offered. */
   maskedAddressDomain: string;
+  /** Accessibility and help links (lib/help-links.ts); '' hides a link. */
+  accessibilityStatementUrl: string;
+  accessibilityFeedbackUrl: string;
+  helpUrl: string;
+  easyReadUrl: string;
+  signLanguageUrl: string;
+  /** Stay off every built-in outside host (#903; lib/outgoing-hosts.ts). */
+  noThirdPartyTraffic: boolean;
+  /** Lite only: whether sign-out revokes the refresh token (#1388). The server build decides in its token route. */
+  oauthRevokeOnSignOut?: boolean;
 }
 
 interface AppConfig extends ConfigData {
@@ -73,8 +85,10 @@ async function fetchLiteConfig(): Promise<ConfigData> {
     if (!res.ok) throw new Error(`config.json answered ${res.status}`);
     return applyLiteConfig(await res.json(), defaults);
   } catch (err) {
-    console.warn('[lite] config.json missing or invalid, using defaults:', err);
-    return applyLiteConfig({}, defaults);
+    // Fail closed (#903): without a readable config.json nobody said outside
+    // hosts may be used, so the no-third-party switches stay on.
+    console.warn('[lite] config.json missing or invalid, using defaults with no third-party traffic:', err);
+    return applyLiteConfig({ noThirdPartyTraffic: true }, defaults);
   }
 }
 
@@ -110,6 +124,11 @@ async function fetchServerConfig(): Promise<ConfigData> {
   throw lastError;
 }
 
+/** The config once fetched (it is fetched at app start), for code outside React. */
+export function getCachedConfig(): ConfigData | null {
+  return configCache;
+}
+
 export async function fetchConfig(): Promise<ConfigData> {
   // Return cached config if available
   if (configCache) {
@@ -125,6 +144,7 @@ export async function fetchConfig(): Promise<ConfigData> {
   configPromise = (IS_LITE ? fetchLiteConfig() : fetchServerConfig())
     .then((data) => {
       configCache = data;
+      setNoThirdPartyTraffic(data.noThirdPartyTraffic === true);
       // Fetch admin policy alongside config (non-blocking)
       usePolicyStore.getState().fetchPolicy();
       return data;
@@ -167,6 +187,7 @@ export function useConfig(): AppConfig {
     loginImprintUrl: configCache?.loginImprintUrl || '',
     loginPrivacyPolicyUrl: configCache?.loginPrivacyPolicyUrl || '',
     loginWebsiteUrl: configCache?.loginWebsiteUrl || '',
+    loginUsernamePlaceholder: configCache?.loginUsernamePlaceholder || '',
     loginLogoMaxHeight: configCache?.loginLogoMaxHeight || '',
     loginLogoMaxWidth: configCache?.loginLogoMaxWidth || '',
     loginShowHeading: configCache?.loginShowHeading ?? true,
@@ -184,6 +205,12 @@ export function useConfig(): AppConfig {
     parentOrigin: configCache?.parentOrigin || '',
     sourceCodeUrl: configCache?.sourceCodeUrl || '',
     maskedAddressDomain: configCache?.maskedAddressDomain || '',
+    accessibilityStatementUrl: configCache?.accessibilityStatementUrl || '',
+    accessibilityFeedbackUrl: configCache?.accessibilityFeedbackUrl || '',
+    helpUrl: configCache?.helpUrl || '',
+    easyReadUrl: configCache?.easyReadUrl || '',
+    signLanguageUrl: configCache?.signLanguageUrl || '',
+    noThirdPartyTraffic: configCache?.noThirdPartyTraffic ?? false,
     isLoading: !configCache,
     error: null,
   });
@@ -213,6 +240,7 @@ export function useConfig(): AppConfig {
         loginImprintUrl: configCache.loginImprintUrl,
         loginPrivacyPolicyUrl: configCache.loginPrivacyPolicyUrl,
         loginWebsiteUrl: configCache.loginWebsiteUrl,
+        loginUsernamePlaceholder: configCache.loginUsernamePlaceholder,
         loginLogoMaxHeight: configCache.loginLogoMaxHeight,
         loginLogoMaxWidth: configCache.loginLogoMaxWidth,
         loginShowHeading: configCache.loginShowHeading,
@@ -230,6 +258,12 @@ export function useConfig(): AppConfig {
         parentOrigin: configCache.parentOrigin,
         sourceCodeUrl: configCache.sourceCodeUrl,
         maskedAddressDomain: configCache.maskedAddressDomain,
+        accessibilityStatementUrl: configCache.accessibilityStatementUrl,
+        accessibilityFeedbackUrl: configCache.accessibilityFeedbackUrl,
+        helpUrl: configCache.helpUrl,
+        easyReadUrl: configCache.easyReadUrl,
+        signLanguageUrl: configCache.signLanguageUrl,
+        noThirdPartyTraffic: configCache.noThirdPartyTraffic,
         isLoading: false,
         error: null,
       });
@@ -260,6 +294,7 @@ export function useConfig(): AppConfig {
           loginImprintUrl: data.loginImprintUrl,
           loginPrivacyPolicyUrl: data.loginPrivacyPolicyUrl,
           loginWebsiteUrl: data.loginWebsiteUrl,
+          loginUsernamePlaceholder: data.loginUsernamePlaceholder,
           loginLogoMaxHeight: data.loginLogoMaxHeight,
           loginLogoMaxWidth: data.loginLogoMaxWidth,
           loginShowHeading: data.loginShowHeading,
@@ -277,6 +312,12 @@ export function useConfig(): AppConfig {
           parentOrigin: data.parentOrigin,
           sourceCodeUrl: data.sourceCodeUrl,
           maskedAddressDomain: data.maskedAddressDomain,
+          accessibilityStatementUrl: data.accessibilityStatementUrl,
+          accessibilityFeedbackUrl: data.accessibilityFeedbackUrl,
+          helpUrl: data.helpUrl,
+          easyReadUrl: data.easyReadUrl,
+          signLanguageUrl: data.signLanguageUrl,
+          noThirdPartyTraffic: data.noThirdPartyTraffic,
           isLoading: false,
           error: null,
         });

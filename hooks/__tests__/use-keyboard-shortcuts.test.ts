@@ -45,8 +45,16 @@ describe('useKeyboardShortcuts: x toggles thread expansion', () => {
 // #992: Shift + arrow (or j/k) extends the selection instead of moving to the
 // next message; plain arrows still move.
 describe('useKeyboardShortcuts: Shift + arrow extends the selection', () => {
+  // From inside the message list: the arrows only move the selection there.
   function press(key: string, code: string, shiftKey: boolean) {
-    document.dispatchEvent(new KeyboardEvent('keydown', { key, code, shiftKey, bubbles: true }));
+    const list = document.createElement('div');
+    list.id = 'message-list';
+    document.body.appendChild(list);
+    try {
+      list.dispatchEvent(new KeyboardEvent('keydown', { key, code, shiftKey, bubbles: true }));
+    } finally {
+      list.remove();
+    }
   }
 
   it.each([
@@ -128,5 +136,40 @@ describe('useKeyboardShortcuts: n opens the next unread message', () => {
 
   it('is listed in the help modal under navigation', () => {
     expect(KEYBOARD_SHORTCUTS.navigation).toContainEqual({ key: 'n', description: 'shortcuts.navigation.next_unread' });
+  });
+});
+
+// Enter on the focused "Skip to message list" link (or any button) belongs to
+// that control: it must not open the selected message.
+describe('useKeyboardShortcuts: Enter on a link or button', () => {
+  function setup() {
+    const onOpenEmail = vi.fn();
+    renderHook(() =>
+      useKeyboardShortcuts({ enabled: true, emails: [], selectedEmailId: 'e1', handlers: { onOpenEmail } }),
+    );
+    return onOpenEmail;
+  }
+
+  it.each([
+    ['a link', () => { const a = document.createElement('a'); a.href = '#message-list'; return a; }],
+    ['a button', () => document.createElement('button')],
+  ])('leaves Enter on %s to it', (_name, make) => {
+    const onOpenEmail = setup();
+    const el = make();
+    document.body.appendChild(el);
+    try {
+      const event = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true });
+      el.dispatchEvent(event);
+      expect(onOpenEmail).not.toHaveBeenCalled();
+      expect(event.defaultPrevented).toBe(false);
+    } finally {
+      el.remove();
+    }
+  });
+
+  it('still opens the selected message with Enter elsewhere', () => {
+    const onOpenEmail = setup();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
+    expect(onOpenEmail).toHaveBeenCalledTimes(1);
   });
 });

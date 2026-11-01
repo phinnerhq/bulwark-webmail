@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { FileBrowser } from '../file-browser';
 import { useFileStore, type FileResource } from '@/stores/file-store';
+import { useSettingsStore } from '@/stores/settings-store';
+import { useRegisteredCommandGroups, type CommandGroup } from '@/lib/command-registry';
+import { DEFAULT_FILES_SETTINGS } from '@/lib/files-settings';
 import type { IJMAPClient } from '@/lib/jmap/client-interface';
 import type { FileNode } from '@/lib/jmap/types';
 
@@ -51,9 +54,9 @@ const SHARED = node('e:f-team', 'Team', null, { isShared: true, accountId: 'e', 
 
 type Overrides = Partial<React.ComponentProps<typeof FileBrowser>>;
 
-function renderBrowser(opts: { resources?: FileResource[]; allFolders?: FileResource[]; props?: Overrides; hasListed?: boolean } = {}) {
+function renderBrowser(opts: { resources?: FileResource[]; allFolders?: FileResource[]; props?: Overrides; hasListed?: boolean; shared?: FileNode[] } = {}) {
   const client = {
-    listAllFileNodesAcrossAccounts: vi.fn(async () => [...OWN, SHARED]),
+    listAllFileNodesAcrossAccounts: vi.fn(async () => [...OWN, ...(opts.shared ?? [SHARED])]),
   } as unknown as IJMAPClient;
   act(() => {
     useFileStore.setState({
@@ -102,7 +105,7 @@ function renderBrowser(opts: { resources?: FileResource[]; allFolders?: FileReso
       onPaste={noop}
       onMoveTo={noop}
       onPreviewImage={vi.fn()}
-      onCreateTextFile={noop}
+      onCreateFile={noop}
       onDuplicate={noop}
       getImageUrl={async () => ''}
       favorites={[]}
@@ -132,7 +135,10 @@ function list() {
 }
 
 describe('FileBrowser', () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => {
+    localStorage.clear();
+    act(() => { useSettingsStore.setState({ filesSettings: DEFAULT_FILES_SETTINGS }); });
+  });
   afterEach(() => {
     act(() => { useFileStore.setState({ client: null, sharedRoots: [], allFolders: [] }); });
   });
@@ -144,6 +150,27 @@ describe('FileBrowser', () => {
     fireEvent.click(within(section).getByText('Team'));
     expect(onNavigate).toHaveBeenCalledWith('/Team', 'e:f-team');
     expect(within(tree()).getByText('Team')).toBeInTheDocument();
+  });
+
+  it('lists files shared on their own on a page per owner, at the root and in the sidebar', async () => {
+    const lone = node('e:f-plan', 'plan.pdf', 'e:f-private', {
+      blobId: 'b-plan', type: 'application/pdf', size: 5, isShared: true, accountId: 'e', accountName: 'userb@example.org',
+    });
+    const { onNavigate } = renderBrowser({ shared: [SHARED, lone] });
+    const section = await screen.findByRole('region', { name: 'shared_with_me' });
+    fireEvent.click(await within(section).findByText('shared_files_from'));
+    expect(onNavigate).toHaveBeenCalledWith('/shared_files_from', 'e:*');
+    fireEvent.click(within(tree()).getByText('shared_files_from'));
+    expect(onNavigate).toHaveBeenLastCalledWith('/shared_files_from', 'e:*');
+  });
+
+  it('offers no download for a symlink', () => {
+    const link = { ...resource(node('f-link', 'shortcut.txt', null, { blobId: null, nodeType: 'symlink' } as Partial<FileNode>)), isDirectory: false, isSymlink: true };
+    renderBrowser({ resources: [...OWN.map(resource), link] });
+    const row = within(list()).getByText('shortcut.txt').closest('[role="row"]') as HTMLElement;
+    expect(within(row).queryByRole('button', { name: 'download' })).toBeNull();
+    const notes = within(list()).getByText('notes.txt').closest('[role="row"]') as HTMLElement;
+    expect(within(notes).getByRole('button', { name: 'download' })).toBeInTheDocument();
   });
 
   it('shows shared folders instead of the empty state when the own root is empty', async () => {
@@ -207,7 +234,7 @@ describe('FileBrowser', () => {
   });
 
   it('starts in the default view and sort from the settings', () => {
-    localStorage.setItem('files-settings', JSON.stringify({ defaultSortKey: 'name', defaultSortDir: 'desc' }));
+    act(() => { useSettingsStore.setState({ filesSettings: { ...DEFAULT_FILES_SETTINGS, defaultSortKey: 'name', defaultSortDir: 'desc' } }); });
     const files = ['a.txt', 'c.txt', 'b.txt'].map((n, i) => resource(node(`f${i}`, n, null, { blobId: `b${i}`, type: 'text/plain', size: 1 })));
     renderBrowser({ resources: files, allFolders: [] });
     const names = within(list()).getAllByRole('row').slice(1).map((r) => r.getAttribute('data-resource'));
@@ -312,5 +339,202 @@ describe('FileBrowser', () => {
     const bar = screen.getByRole('toolbar', { name: 'selection_actions' });
     expect(within(bar).getByRole('button', { name: 'download' })).toBeInTheDocument();
     expect(within(bar).getByRole('button', { name: 'delete' })).toBeInTheDocument();
+  });
+
+  it("takes the closed folder drawer out of reach, so it can't cover the nav rail or catch Tab", () => {
+    renderBrowser();
+    const drawer = screen.getByTestId('files-sidebar-drawer');
+    expect(drawer).toHaveAttribute('inert');
+    expect(drawer.className).toContain('invisible');
+    tree();
+    expect(drawer).not.toHaveAttribute('inert');
+  });
+
+  it("renames in a dialog that selects the name without its extension and closes on Escape", async () => {
+    renderBrowser({ props: { selectedResources: new Set(['notes.txt']) } });
+    fireEvent.keyDown(window, { key: 'F2' });
+    const dialog = screen.getByRole('dialog', { name: 'rename_title' });
+    const input = within(dialog).getByRole('textbox') as HTMLInputElement;
+    await waitFor(() => expect([input.selectionStart, input.selectionEnd]).toEqual([0, 5]));
+
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'rename_title' })).toBeNull();
+  });
+
+  it("deletes the selection with Backspace, as Mail does, and goes up a folder only with Alt+Up", () => {
+    const onDelete = vi.fn(async () => {});
+    const onNavigate = vi.fn();
+    renderBrowser({ props: { currentPath: '/Documents', selectedResources: new Set(['notes.txt']), onDelete, onNavigate } });
+    fireEvent.keyDown(window, { key: 'Backspace' });
+    expect(onDelete).toHaveBeenCalledWith('notes.txt');
+    expect(onNavigate).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: 'ArrowUp', altKey: true });
+    expect(onNavigate).toHaveBeenCalled();
+  });
+
+  it("keeps the selection when Escape closes an item's menu", () => {
+    const onClearSelection = vi.fn();
+    renderBrowser({ props: { selectedResources: new Set(['notes.txt', 'Documents']), onClearSelection } });
+    fireEvent.contextMenu(within(list()).getByText('notes.txt'));
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    fireEvent.keyDown(document.activeElement ?? window, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(onClearSelection).not.toHaveBeenCalled();
+  });
+
+  it("offers Restore and Delete permanently in the trash, and Empty trash in its toolbar", () => {
+    const onRestore = vi.fn(async () => {});
+    const onEmptyTrash = vi.fn();
+    const trashed = { ...resource(OWN[1]), trash: { deletedAt: '2026-10-20T10:00:00Z', fromParentId: null, batchId: 'b1' } };
+    act(() => { useFileStore.setState({ trashCount: 1 }); });
+    renderBrowser({ resources: [trashed], props: { currentPath: '/.Trash', onRestore, onEmptyTrash } });
+    act(() => { useFileStore.setState({ currentParentId: '*trash', trashCount: 1 }); });
+
+    fireEvent.click(screen.getByRole('button', { name: 'empty_trash' }));
+    expect(onEmptyTrash).toHaveBeenCalled();
+
+    fireEvent.contextMenu(within(list()).getByText('notes.txt'));
+    expect(screen.queryByText('rename')).toBeNull();
+    fireEvent.click(screen.getByText('restore'));
+    expect(onRestore).toHaveBeenCalledWith(['notes.txt']);
+    expect(screen.getByRole('columnheader', { name: 'deleted' })).toBeInTheDocument();
+  });
+
+  it("lists the trash in the sidebar", () => {
+    const { onNavigate } = renderBrowser();
+    fireEvent.click(within(tree()).getByRole('button', { name: /trash/ }));
+    expect(onNavigate).toHaveBeenCalledWith('/.Trash', '*trash');
+  });
+
+  it("moves an item to a folder picked in Move to…, without dragging", () => {
+    const onMoveTo = vi.fn(async () => {});
+    renderBrowser({ props: { onMoveTo } });
+    fireEvent.contextMenu(within(list()).getByText('notes.txt'));
+    fireEvent.click(screen.getByText('move_to'));
+    const dialog = screen.getByRole('dialog', { name: 'move_to_title' });
+    expect(within(dialog).getByRole('button', { name: 'move_here' })).toBeDisabled();
+    fireEvent.click(within(dialog).getByRole('treeitem', { name: /Documents/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'move_here' }));
+    expect(onMoveTo).toHaveBeenCalledWith(['notes.txt'], 'f-docs');
+  });
+
+  it("leaves a folder out of its own Move to… picker", () => {
+    renderBrowser();
+    fireEvent.contextMenu(within(list()).getByText('Documents'));
+    fireEvent.click(screen.getByText('move_to'));
+    const dialog = screen.getByRole('dialog', { name: 'move_to_title' });
+    expect(within(dialog).queryByRole('treeitem', { name: /Documents/ })).toBeNull();
+  });
+
+  it("downloads a folder as a zip named after it", () => {
+    const onDownloadZip = vi.fn(async () => {});
+    renderBrowser({ props: { onDownloadZip } });
+    fireEvent.contextMenu(within(list()).getByText('Documents'));
+    fireEvent.click(screen.getByText('download_zip'));
+    expect(onDownloadZip).toHaveBeenCalledWith(['f-docs'], 'Documents.zip');
+  });
+
+  it("adds Upload, New folder and Trash to the command palette, and focuses search with /", () => {
+    renderBrowser();
+    let groups: CommandGroup[] = [];
+    function Probe() {
+      groups = useRegisteredCommandGroups();
+      return null;
+    }
+    render(<Probe />);
+    const files = groups.find((g) => g.label === 'files');
+    expect(files?.commands.map((c) => c.label)).toEqual(expect.arrayContaining(['upload_files', 'new_folder', 'trash']));
+
+    fireEvent.keyDown(document.body, { key: '/' });
+    expect(document.activeElement).toHaveAttribute('role', 'searchbox');
+  });
+
+  it("lists a folder's actions in the same order in the list and in the tree", () => {
+    renderBrowser({ props: { onDownloadZip: vi.fn(async () => {}), onMoveNode: vi.fn(async () => {}) } });
+    const labels = () => within(screen.getByRole('menu')).getAllByRole('menuitem').map((i) => (i.textContent ?? '').replace(/(F2|Del|Ctrl\+[A-Z]|⌘[A-Z])$/, ''));
+    fireEvent.contextMenu(within(list()).getByText('Documents'));
+    const inList = labels();
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+    fireEvent.contextMenu(within(tree()).getByText('Documents'));
+    const inTree = labels();
+    const shared = inTree.filter((l) => inList.includes(l));
+    expect(shared).toEqual(inList.filter((l) => inTree.includes(l)));
+    expect(shared).toEqual(expect.arrayContaining(['open', 'star', 'rename', 'move_to', 'download_zip', 'delete']));
+  });
+
+  it("closes the details panel over a narrow list with Escape", async () => {
+    renderBrowser({ props: { selectedResources: new Set(['notes.txt']) } });
+    fireEvent.click(screen.getByRole('button', { name: 'details' }));
+    expect(screen.getByRole('button', { name: 'details' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.getByRole('button', { name: 'details' })).toHaveAttribute('aria-pressed', 'false');
+  });
+});
+
+describe('FileBrowser keyboard focus (SR-15)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    act(() => { useSettingsStore.setState({ filesSettings: DEFAULT_FILES_SETTINGS }); });
+  });
+  afterEach(() => {
+    act(() => { useFileStore.setState({ client: null, sharedRoots: [], allFolders: [] }); });
+  });
+
+  const rowOf = (name: string) => within(list()).getByText(name).closest('[role="row"]') as HTMLElement;
+
+  it('gives the list one tab stop, on the first item', () => {
+    renderBrowser();
+    expect(rowOf('Documents')).toHaveAttribute('tabindex', '0');
+    expect(rowOf('notes.txt')).toHaveAttribute('tabindex', '-1');
+  });
+
+  it('moves real focus with the arrow keys, so screen readers follow', () => {
+    renderBrowser();
+    fireEvent.keyDown(window, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(rowOf('Documents'));
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(rowOf('notes.txt'));
+    // The tab stop follows, so Tab out and back returns to the same item.
+    expect(rowOf('notes.txt')).toHaveAttribute('tabindex', '0');
+    expect(rowOf('Documents')).toHaveAttribute('tabindex', '-1');
+    fireEvent.keyDown(document.activeElement!, { key: 'Home' });
+    expect(document.activeElement).toBe(rowOf('Documents'));
+  });
+
+  it('nests the card view as grid, row group, row, cell', () => {
+    act(() => { useSettingsStore.setState({ filesSettings: { ...DEFAULT_FILES_SETTINGS, defaultViewMode: 'grid' } }); });
+    renderBrowser();
+    const grid = list();
+    expect(grid.querySelector('section')).toBeNull();
+    const groups = within(grid).getAllByRole('rowgroup');
+    expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual(['folders', 'files_heading']);
+    for (const group of groups) {
+      expect(within(group).getByRole('row')).toBeInTheDocument();
+    }
+    const tile = within(grid).getByText('notes.txt').closest('[role="gridcell"]') as HTMLElement;
+    expect(tile.parentElement).toHaveAttribute('role', 'row');
+    fireEvent.keyDown(window, { key: 'End' });
+    expect(document.activeElement).toBe(tile);
+  });
+
+  it('lists the sidebar folders as lists of buttons, not a tree without tree keys', async () => {
+    renderBrowser();
+    await screen.findAllByText('Team');
+    const nav = tree();
+    expect(within(nav).queryByRole('tree')).toBeNull();
+    expect(within(nav).queryByRole('treeitem')).toBeNull();
+    for (const list of within(nav).getAllByRole('list')) {
+      for (const child of Array.from(list.children)) expect(child).toHaveAttribute('role', 'listitem');
+    }
+    // The folder open now is marked as the current page.
+    expect(within(nav).getByRole('button', { name: 'my_files' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('shows an item\'s select box while the keyboard is in the item, not only on hover', () => {
+    renderBrowser();
+    const box = within(rowOf('notes.txt')).getByRole('checkbox');
+    expect(box.className).toContain('group-focus-within:opacity-100');
+    expect(box.className).toContain('pointer-coarse:opacity-100');
   });
 });

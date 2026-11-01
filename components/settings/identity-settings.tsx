@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { SettingsSection, SettingItem, Select } from './settings-section';
 import { IdentityManagerModal } from '@/components/identity/identity-manager-modal';
+import { SignatureDetailsSection } from './signature-details-section';
 import { useIdentityStore } from '@/stores/identity-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import {
@@ -37,6 +38,7 @@ export function EmailAddressesSection() {
         <SettingItem
           label={t('identities_count.label')}
           description={t('identities_count.description')}
+          term="identity"
         >
           <div className="flex items-center gap-2">
             <span className="text-sm text-foreground">
@@ -52,14 +54,14 @@ export function EmailAddressesSection() {
           </div>
         </SettingItem>
 
-        {/* Sub-Addressing Info */}
+        {/* Sub-Addressing Info: the description says it all. Its "Learn
+            more" opened the identity manager, which says nothing about it. */}
         <SettingItem
           label={t('sub_addressing.label')}
           description={t('sub_addressing.description')}
+          term="sub_addressing"
         >
-          <Button variant="outline" size="sm" onClick={() => setShowModal(true)}>
-            {t('sub_addressing.learn_more')}
-          </Button>
+          {null}
         </SettingItem>
 
         <SettingItem
@@ -101,12 +103,15 @@ export function EmailAddressesSection() {
                 }}
                 aria-label={tEmail('sub_address_delimiter.custom_input_label')}
                 placeholder={DEFAULT_CUSTOM_DELIMITER}
-                className="w-16 px-2 py-1 text-sm font-mono text-center bg-background border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-ring"
+                className="w-16 px-2 py-1 text-sm font-mono text-center bg-background border border-border rounded-md focus:outline-hidden"
               />
             )}
           </div>
         </SettingItem>
       </SettingsSection>
+
+      {/* The details the organisation signature asks for, if it asks. */}
+      <SignatureDetailsSection />
 
       {/* Identity Manager Modal */}
       <IdentityManagerModal
