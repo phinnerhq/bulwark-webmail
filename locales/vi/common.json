@@ -1,6 +1,8 @@
 {
   "meta_description": "Webmail tự lưu trữ cho thư, lịch, danh bạ và tệp, xây dựng trên JMAP",
   "login": {
+    "idp_start_failed": "Không thể bắt đầu đăng nhập bằng {provider}. Hãy thử lại.",
+    "idp_list_label": "Chọn cách đăng nhập",
     "title": "Thư điện tử trên web",
     "username_label": "Email",
     "username_placeholder": "user@example.com",
@@ -77,6 +79,8 @@
     },
     "oauth_completing": "Đang hoàn tất đăng nhập...",
     "oauth_error": {
+      "mailbox_unavailable": "Đã đăng nhập, nhưng máy chủ thư không có hộp thư cho tài khoản này.",
+      "back_to_mail": "Quay lại thư",
       "title": "Xác thực không thành công",
       "invalid_state": "Xác thực bảo mật không thành công. Vui lòng thử đăng nhập lại.",
       "missing_params": "Thiếu dữ liệu ủy quyền. Vui lòng thử đăng nhập lại.",
@@ -1564,6 +1568,42 @@
     "switch_to_mongolian": "Chuyển sang tiếng Mông Cổ"
   },
   "settings": {
+    "masked_addresses": {
+      "title": "Địa chỉ ẩn danh",
+      "description": "Dùng địa chỉ trên {domain} thay cho địa chỉ thật của bạn. Thư gửi đến các địa chỉ này vào hộp thư đến của bạn, và bạn có thể tắt một địa chỉ khi nó bắt đầu nhận thư rác.",
+      "description_generic": "Dùng địa chỉ dùng một lần thay cho địa chỉ thật của bạn. Thư gửi đến các địa chỉ này vào hộp thư đến của bạn, và bạn có thể tắt một địa chỉ khi nó bắt đầu nhận thư rác.",
+      "label_placeholder": "Dùng cho việc gì? (vd. Netflix)",
+      "label_aria": "Địa chỉ ẩn danh này dùng cho việc gì",
+      "create": "Địa chỉ ẩn danh mới",
+      "loading": "Đang tải địa chỉ ẩn danh…",
+      "load_failed": "Không thể tải các địa chỉ ẩn danh của bạn.",
+      "retry": "Thử lại",
+      "empty": "Chưa có địa chỉ ẩn danh nào. Hãy tạo một địa chỉ cho trang web tiếp theo bạn đăng ký.",
+      "count": "{count} / {limit}",
+      "copy": "Sao chép {email}",
+      "copy_failed": "Không thể sao chép vào bộ nhớ tạm",
+      "no_label": "Không có nhãn",
+      "edit_label": "Sửa nhãn",
+      "save": "Lưu",
+      "send_from": "Gửi từ địa chỉ này",
+      "send_from_hint": "Thêm làm danh tính gửi, không kèm tên của bạn, để trả lời từ địa chỉ này",
+      "identity_created": "Giờ bạn có thể gửi từ {email}",
+      "identity_failed": "Không thể thêm danh tính gửi: {error}",
+      "enable": "Bật {email}",
+      "disable": "Tắt {email}",
+      "delete": "Xóa",
+      "delete_aria": "Xóa {email}",
+      "delete_title": "Xóa địa chỉ ẩn danh?",
+      "delete_message": "Thư gửi đến {email} sẽ bị từ chối từ bây giờ. Địa chỉ này sẽ không bao giờ được cấp lại, nên không thể hoàn tác.",
+      "footnote": "Địa chỉ đã tắt hoặc đã xóa sẽ từ chối thư, nên người gửi sẽ nhận thư báo lỗi.",
+      "errors": {
+        "limit_reached": "Bạn đã đạt giới hạn {limit} địa chỉ ẩn danh. Hãy xóa những địa chỉ không còn dùng.",
+        "session_expired": "Phiên của bạn đã hết hạn. Tải lại trang rồi thử lại.",
+        "account_not_found": "Không tìm thấy tài khoản của bạn trên máy chủ thư.",
+        "no_free_address": "Không tìm được địa chỉ trống. Hãy thử lại.",
+        "generic": "Đã xảy ra lỗi. Hãy thử lại."
+      }
+    },
     "title": "Cài đặt",
     "org_locked": "Do tổ chức của bạn đặt",
     "back_to_mail": "Quay lại thư",
@@ -1580,6 +1620,7 @@
     "search_clear": "Xóa nội dung tìm kiếm",
     "search_no_results": "Không tìm thấy cài đặt phù hợp",
     "tabs": {
+      "masked_addresses": "Địa chỉ ẩn danh",
       "appearance": "Giao diện",
       "account": "Tài khoản",
       "vacation": "Ngoài văn phòng",

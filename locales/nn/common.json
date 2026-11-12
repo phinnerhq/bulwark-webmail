@@ -1,6 +1,8 @@
 {
   "meta_description": "Sjølvhosta nettpost for e-post, kalender, kontaktar og filer, bygd på JMAP",
   "login": {
+    "idp_start_failed": "Kunne ikkje starte innlogging med {provider}. Prøv igjen.",
+    "idp_list_label": "Vel korleis du vil logge inn",
     "title": "Nettpost",
     "username_label": "E-post",
     "username_placeholder": "user@example.com",
@@ -77,6 +79,8 @@
     },
     "oauth_completing": "Fullfører innlogging...",
     "oauth_error": {
+      "mailbox_unavailable": "Du er logga inn, men e-posttenaren har ingen postkasse for denne kontoen.",
+      "back_to_mail": "Tilbake til e-posten",
       "title": "Autentiseringa mislukkast",
       "invalid_state": "Sikkerheitskontrollen mislukkast. Prøv å logge inn på nytt.",
       "missing_params": "Manglande autorisasjonsdata. Prøv å logge inn på nytt.",
@@ -1560,6 +1564,42 @@
     "switch_to_mongolian": "Byt til mongolsk"
   },
   "settings": {
+    "masked_addresses": {
+      "title": "Maskerte adresser",
+      "description": "Gje ut adresser på {domain} i staden for den verkelege adressa di. E-post til dei hamnar i innboksen din, og du kan slå av ei når ho får søppelpost.",
+      "description_generic": "Gje ut eingongsadresser i staden for den verkelege adressa di. E-post til dei hamnar i innboksen din, og du kan slå av ei når ho får søppelpost.",
+      "label_placeholder": "Kva er ho til? (t.d. Netflix)",
+      "label_aria": "Kva den maskerte adressa er til",
+      "create": "Ny maskert adresse",
+      "loading": "Lastar maskerte adresser…",
+      "load_failed": "Kunne ikkje laste dei maskerte adressene dine.",
+      "retry": "Prøv igjen",
+      "empty": "Ingen maskerte adresser enno. Lag ei til neste nettstad du registrerer deg på.",
+      "count": "{count} av {limit}",
+      "copy": "Kopier {email}",
+      "copy_failed": "Kunne ikkje kopiere til utklippstavla",
+      "no_label": "Inga etikett",
+      "edit_label": "Rediger etikett",
+      "save": "Lagre",
+      "send_from": "Send frå ho",
+      "send_from_hint": "Legg ho til som avsendaridentitet, utan namnet ditt, for å svare frå ho",
+      "identity_created": "No kan du sende frå {email}",
+      "identity_failed": "Kunne ikkje leggje til avsendaridentiteten: {error}",
+      "enable": "Slå på {email}",
+      "disable": "Slå av {email}",
+      "delete": "Slett",
+      "delete_aria": "Slett {email}",
+      "delete_title": "Slette maskert adresse?",
+      "delete_message": "E-post til {email} blir avvist frå no av. Adressa blir aldri gjeven ut igjen, så dette kan ikkje angrast.",
+      "footnote": "Avslåtte og sletta adresser avviser e-post, så avsendaren får ei returmelding.",
+      "errors": {
+        "limit_reached": "Du har nådd grensa på {limit} maskerte adresser. Slett nokre du ikkje brukar lenger.",
+        "session_expired": "Økta di har gått ut. Last inn sida på nytt og prøv igjen.",
+        "account_not_found": "Fann ikkje kontoen din på e-posttenaren.",
+        "no_free_address": "Fann inga ledig adresse. Prøv igjen.",
+        "generic": "Noko gjekk gale. Prøv igjen."
+      }
+    },
     "title": "Innstillingar",
     "org_locked": "Sett av organisasjonen din",
     "back_to_mail": "Tilbake til e-post",
@@ -1576,6 +1616,7 @@
     "search_clear": "Tøm søket",
     "search_no_results": "Ingen samsvarande innstillingar",
     "tabs": {
+      "masked_addresses": "Maskerte adresser",
       "appearance": "Utsjånad",
       "account": "Konto",
       "vacation": "Fråvær",
